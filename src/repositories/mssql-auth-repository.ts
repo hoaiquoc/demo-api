@@ -53,7 +53,7 @@ export class MsSqlAuthRepository implements IAuthRepository {
     }
 
     return {
-      accessToken: `mock-token-${randomUUID()}`,
+      accessToken: `token-${randomUUID()}`,
       user: {
         id: String(row.id),
         email: String(row.email),
@@ -65,4 +65,3 @@ export class MsSqlAuthRepository implements IAuthRepository {
     };
   }
 }
-

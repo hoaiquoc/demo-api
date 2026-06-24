@@ -72,9 +72,13 @@ export class AccountsController {
       }
 
       response.status(204).send();
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_BALANCE_NOT_ZERO') {
+        response.status(409).json({ message: 'Chỉ được xoá khoản khi số dư = 0' });
+        return;
+      }
+
       response.status(500).json({ message: 'Internal server error' });
     }
   };
 }
-

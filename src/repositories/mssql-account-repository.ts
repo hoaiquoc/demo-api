@@ -104,17 +104,27 @@ export class MsSqlAccountRepository implements IAccountRepository {
 
     const balanceResult = await pool.request().input('id', sql.NVarChar(64), id).query(`
       SELECT
+        a.[id] AS [id],
         CAST(a.[initialBalance] AS BIGINT)
         + ISNULL(SUM(CASE WHEN t.[type] = 'Income' THEN CAST(t.[amount] AS BIGINT) ELSE -CAST(t.[amount] AS BIGINT) END), 0) AS [balance]
       FROM ${table} a
       LEFT JOIN ${transactionsTable} t ON t.[accountId] = a.[id]
       WHERE a.[id] = @id
-      GROUP BY a.[initialBalance]
+      GROUP BY a.[id], a.[initialBalance]
     `);
 
-    const balanceValue = Number((balanceResult.recordset?.[0] as Record<string, unknown> | undefined)?.balance ?? NaN);
-    if (!Number.isFinite(balanceValue) || balanceValue !== 0) {
+    const row = balanceResult.recordset?.[0] as Record<string, unknown> | undefined;
+    if (!row) {
       return false;
+    }
+
+    const balanceValue = Number(row.balance ?? NaN);
+    if (!Number.isFinite(balanceValue)) {
+      return false;
+    }
+
+    if (balanceValue !== 0) {
+      throw new Error('ACCOUNT_BALANCE_NOT_ZERO');
     }
 
     const result = await pool.request().input('id', sql.NVarChar(64), id).query(`

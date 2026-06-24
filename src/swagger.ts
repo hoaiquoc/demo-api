@@ -71,7 +71,7 @@ export const swaggerDocument = {
       LoginResponse: {
         type: 'object',
         properties: {
-          accessToken: { type: 'string', example: 'mock-token-123' },
+          accessToken: { type: 'string', example: 'token-123' },
           user: { $ref: '#/components/schemas/AuthUser' },
         },
         required: ['accessToken', 'user'],
@@ -218,7 +218,7 @@ export const swaggerDocument = {
     '/api/auth/login': {
       post: {
         tags: ['Auth'],
-        summary: 'Đăng nhập với tài khoản mock',
+        summary: 'Đăng nhập',
         requestBody: {
           required: true,
           content: {
