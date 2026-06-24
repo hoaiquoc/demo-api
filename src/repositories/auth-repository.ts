@@ -44,7 +44,7 @@ function mapUser(user: User): AuthUser {
 }
 
 export class AuthRepository implements IAuthRepository {
-  login(payload: LoginRequest): LoginResponse | undefined {
+  async login(payload: LoginRequest): Promise<LoginResponse | undefined> {
     const matchedUser = mockUsers.find(
       (user) => user.email.toLowerCase() === payload.email.toLowerCase() && user.password === payload.password,
     );

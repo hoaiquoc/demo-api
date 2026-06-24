@@ -5,7 +5,7 @@ import { LoginRequest } from '../models/user';
 export class AuthController {
   constructor(private readonly authRepository: IAuthRepository) {}
 
-  login = (request: Request, response: Response): void => {
+  login = async (request: Request, response: Response): Promise<void> => {
     const payload = request.body as LoginRequest;
 
     if (!payload?.email || !payload?.password) {
@@ -13,13 +13,17 @@ export class AuthController {
       return;
     }
 
-    const loginResult = this.authRepository.login(payload);
+    try {
+      const loginResult = await this.authRepository.login(payload);
 
-    if (!loginResult) {
-      response.status(401).json({ message: 'Thông tin đăng nhập không đúng' });
-      return;
+      if (!loginResult) {
+        response.status(401).json({ message: 'Thông tin đăng nhập không đúng' });
+        return;
+      }
+
+      response.json(loginResult);
+    } catch {
+      response.status(500).json({ message: 'Internal server error' });
     }
-
-    response.json(loginResult);
   };
 }

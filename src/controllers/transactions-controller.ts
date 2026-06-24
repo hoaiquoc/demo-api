@@ -10,44 +10,65 @@ export class TransactionsController {
     return Array.isArray(id) ? id[0] : id;
   }
 
-  getAll = (_request: Request, response: Response): void => {
-    response.json(this.transactionRepository.getAll());
-  };
-
-  getById = (request: Request, response: Response): void => {
-    const transaction = this.transactionRepository.getById(this.getIdParam(request));
-    if (!transaction) {
-      response.status(404).json({ message: 'Transaction not found' });
-      return;
+  getAll = async (_request: Request, response: Response): Promise<void> => {
+    try {
+      const items = await this.transactionRepository.getAll();
+      response.json(items);
+    } catch {
+      response.status(500).json({ message: 'Internal server error' });
     }
-
-    response.json(transaction);
   };
 
-  create = (request: Request, response: Response): void => {
-    const payload = request.body as Omit<TransactionItem, 'id'>;
-    const created = this.transactionRepository.add(payload);
-    response.status(201).json(created);
-  };
+  getById = async (request: Request, response: Response): Promise<void> => {
+    try {
+      const transaction = await this.transactionRepository.getById(this.getIdParam(request));
+      if (!transaction) {
+        response.status(404).json({ message: 'Transaction not found' });
+        return;
+      }
 
-  update = (request: Request, response: Response): void => {
-    const payload = request.body as Omit<TransactionItem, 'id'>;
-    const updated = this.transactionRepository.update(this.getIdParam(request), payload);
-    if (!updated) {
-      response.status(404).json({ message: 'Transaction not found' });
-      return;
+      response.json(transaction);
+    } catch {
+      response.status(500).json({ message: 'Internal server error' });
     }
-
-    response.json(updated);
   };
 
-  delete = (request: Request, response: Response): void => {
-    const deleted = this.transactionRepository.delete(this.getIdParam(request));
-    if (!deleted) {
-      response.status(404).json({ message: 'Transaction not found' });
-      return;
+  create = async (request: Request, response: Response): Promise<void> => {
+    try {
+      const payload = request.body as Omit<TransactionItem, 'id'>;
+      const created = await this.transactionRepository.add(payload);
+      response.status(201).json(created);
+    } catch {
+      response.status(500).json({ message: 'Internal server error' });
     }
+  };
 
-    response.status(204).send();
+  update = async (request: Request, response: Response): Promise<void> => {
+    try {
+      const payload = request.body as Omit<TransactionItem, 'id'>;
+      const updated = await this.transactionRepository.update(this.getIdParam(request), payload);
+      if (!updated) {
+        response.status(404).json({ message: 'Transaction not found' });
+        return;
+      }
+
+      response.json(updated);
+    } catch {
+      response.status(500).json({ message: 'Internal server error' });
+    }
+  };
+
+  delete = async (request: Request, response: Response): Promise<void> => {
+    try {
+      const deleted = await this.transactionRepository.delete(this.getIdParam(request));
+      if (!deleted) {
+        response.status(404).json({ message: 'Transaction not found' });
+        return;
+      }
+
+      response.status(204).send();
+    } catch {
+      response.status(500).json({ message: 'Internal server error' });
+    }
   };
 }

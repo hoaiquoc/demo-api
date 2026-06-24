@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { TransactionsController } from '../controllers/transactions-controller';
 import { TransactionRepository } from '../repositories/transaction-repository';
+import { MsSqlTransactionRepository } from '../repositories/mssql-transaction-repository';
+import { isMssqlEnabled } from '../db/mssql';
 
 const router = Router();
-const transactionRepository = new TransactionRepository();
+const transactionRepository = isMssqlEnabled() ? new MsSqlTransactionRepository() : new TransactionRepository();
 const transactionsController = new TransactionsController(transactionRepository);
 
 router.get('/', transactionsController.getAll);

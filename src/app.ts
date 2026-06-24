@@ -4,6 +4,7 @@ import swaggerUi from 'swagger-ui-express';
 import authRoutes from './routes/auth-routes';
 import transactionsRoutes from './routes/transactions-routes';
 import { swaggerDocument } from './swagger';
+import { getMssqlPool, isMssqlEnabled } from './db/mssql';
 
 const app = express();
 const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS;
@@ -30,7 +31,22 @@ app.get('/', (_request, response) => {
 });
 
 app.get('/health', (_request, response) => {
-  response.json({ status: 'ok' });
+  response.json({ status: 'ok', mssql: isMssqlEnabled() ? 'enabled' : 'disabled' });
+});
+
+app.get('/health/db', async (_request, response) => {
+  if (!isMssqlEnabled()) {
+    response.status(400).json({ status: 'disabled' });
+    return;
+  }
+
+  try {
+    const pool = await getMssqlPool();
+    const result = await pool.request().query('SELECT 1 AS ok');
+    response.json({ status: 'ok', ok: result.recordset?.[0]?.ok === 1 });
+  } catch {
+    response.status(500).json({ status: 'error' });
+  }
 });
 
 app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerDocument));

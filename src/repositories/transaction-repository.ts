@@ -28,15 +28,15 @@ export class TransactionRepository implements ITransactionRepository {
     },
   ];
 
-  getAll(): TransactionItem[] {
+  async getAll(): Promise<TransactionItem[]> {
     return [...this.transactions].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
   }
 
-  getById(id: string): TransactionItem | undefined {
+  async getById(id: string): Promise<TransactionItem | undefined> {
     return this.transactions.find((item) => item.id === id);
   }
 
-  add(transaction: Omit<TransactionItem, 'id'>): TransactionItem {
+  async add(transaction: Omit<TransactionItem, 'id'>): Promise<TransactionItem> {
     const created: TransactionItem = {
       id: randomUUID(),
       ...transaction,
@@ -46,8 +46,8 @@ export class TransactionRepository implements ITransactionRepository {
     return created;
   }
 
-  update(id: string, transaction: Omit<TransactionItem, 'id'>): TransactionItem | undefined {
-    const existing = this.getById(id);
+  async update(id: string, transaction: Omit<TransactionItem, 'id'>): Promise<TransactionItem | undefined> {
+    const existing = await this.getById(id);
     if (!existing) {
       return undefined;
     }
@@ -64,7 +64,7 @@ export class TransactionRepository implements ITransactionRepository {
     return existing;
   }
 
-  delete(id: string): boolean {
+  async delete(id: string): Promise<boolean> {
     const index = this.transactions.findIndex((item) => item.id === id);
     if (index < 0) {
       return false;

@@ -1,5 +1,5 @@
 import { LoginRequest, LoginResponse } from '../models/user';
 
 export interface IAuthRepository {
-  login(payload: LoginRequest): LoginResponse | undefined;
+  login(payload: LoginRequest): Promise<LoginResponse | undefined>;
 }
