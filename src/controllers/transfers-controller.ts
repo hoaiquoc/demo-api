@@ -6,6 +6,7 @@ export class TransfersController {
   constructor(private readonly transactionRepository: ITransactionRepository) {}
 
   create = async (request: Request, response: Response): Promise<void> => {
+    const tenantId = String((response.locals as Record<string, unknown>).tenantId ?? '');
     const payload = request.body as TransferRequest;
 
     if (!payload?.fromAccountId || !payload?.toAccountId || !payload?.createdBy) {
@@ -28,7 +29,7 @@ export class TransfersController {
     const note = payload.note?.trim() ?? '';
 
     try {
-      const outTransaction = await this.transactionRepository.add({
+      const outTransaction = await this.transactionRepository.add(tenantId, {
         title: 'Chuyển tiền',
         accountId: payload.fromAccountId,
         categoryId: 'transfer',
@@ -40,7 +41,7 @@ export class TransfersController {
         status: 'Completed',
       });
 
-      const inTransaction = await this.transactionRepository.add({
+      const inTransaction = await this.transactionRepository.add(tenantId, {
         title: 'Nhận chuyển tiền',
         accountId: payload.toAccountId,
         categoryId: 'transfer',
@@ -58,4 +59,3 @@ export class TransfersController {
     }
   };
 }
-

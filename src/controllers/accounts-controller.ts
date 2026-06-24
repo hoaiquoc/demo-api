@@ -5,6 +5,10 @@ import { Account } from '../models/account';
 export class AccountsController {
   constructor(private readonly accountRepository: IAccountRepository) {}
 
+  private getTenantId(response: Response): string {
+    return String((response.locals as Record<string, unknown>).tenantId ?? '');
+  }
+
   private getIdParam(request: Request): string {
     const { id } = request.params;
     return Array.isArray(id) ? id[0] : id;
@@ -12,7 +16,7 @@ export class AccountsController {
 
   getAll = async (_request: Request, response: Response): Promise<void> => {
     try {
-      const items = await this.accountRepository.getAll();
+      const items = await this.accountRepository.getAll(this.getTenantId(response));
       response.json(items);
     } catch {
       response.status(500).json({ message: 'Internal server error' });
@@ -21,7 +25,7 @@ export class AccountsController {
 
   getById = async (request: Request, response: Response): Promise<void> => {
     try {
-      const account = await this.accountRepository.getById(this.getIdParam(request));
+      const account = await this.accountRepository.getById(this.getTenantId(response), this.getIdParam(request));
       if (!account) {
         response.status(404).json({ message: 'Account not found' });
         return;
@@ -41,7 +45,7 @@ export class AccountsController {
         return;
       }
 
-      const created = await this.accountRepository.add(payload);
+      const created = await this.accountRepository.add(this.getTenantId(response), payload);
       response.status(201).json(created);
     } catch {
       response.status(500).json({ message: 'Internal server error' });
@@ -51,7 +55,7 @@ export class AccountsController {
   update = async (request: Request, response: Response): Promise<void> => {
     try {
       const payload = request.body as Omit<Account, 'id'>;
-      const updated = await this.accountRepository.update(this.getIdParam(request), payload);
+      const updated = await this.accountRepository.update(this.getTenantId(response), this.getIdParam(request), payload);
       if (!updated) {
         response.status(404).json({ message: 'Account not found' });
         return;
@@ -65,7 +69,7 @@ export class AccountsController {
 
   delete = async (request: Request, response: Response): Promise<void> => {
     try {
-      const deleted = await this.accountRepository.delete(this.getIdParam(request));
+      const deleted = await this.accountRepository.delete(this.getTenantId(response), this.getIdParam(request));
       if (!deleted) {
         response.status(404).json({ message: 'Account not found' });
         return;

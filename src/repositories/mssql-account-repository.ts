@@ -4,13 +4,14 @@ import { getMssqlPool, sql } from '../db/mssql';
 import { getAccountsTableName, getTransactionsTableName } from '../db/schema';
 
 export class MsSqlAccountRepository implements IAccountRepository {
-  async getAll(): Promise<Account[]> {
+  async getAll(tenantId: string): Promise<Account[]> {
     const pool = await getMssqlPool();
     const table = getAccountsTableName();
 
-    const result = await pool.request().query(`
+    const result = await pool.request().input('tenantId', sql.NVarChar(64), tenantId).query(`
       SELECT [id], [name], [type], [initialBalance], [color]
       FROM ${table}
+      WHERE [tenantId] = @tenantId
       ORDER BY [name] ASC
     `);
 
@@ -24,14 +25,18 @@ export class MsSqlAccountRepository implements IAccountRepository {
     }));
   }
 
-  async getById(id: string): Promise<Account | undefined> {
+  async getById(tenantId: string, id: string): Promise<Account | undefined> {
     const pool = await getMssqlPool();
     const table = getAccountsTableName();
 
-    const result = await pool.request().input('id', sql.NVarChar(64), id).query(`
+    const result = await pool
+      .request()
+      .input('tenantId', sql.NVarChar(64), tenantId)
+      .input('id', sql.NVarChar(64), id)
+      .query(`
       SELECT TOP 1 [id], [name], [type], [initialBalance], [color]
       FROM ${table}
-      WHERE [id] = @id
+      WHERE [tenantId] = @tenantId AND [id] = @id
     `);
 
     const row = result.recordset?.[0] as Record<string, unknown> | undefined;
@@ -48,31 +53,33 @@ export class MsSqlAccountRepository implements IAccountRepository {
     };
   }
 
-  async add(account: Account): Promise<Account> {
+  async add(tenantId: string, account: Account): Promise<Account> {
     const pool = await getMssqlPool();
     const table = getAccountsTableName();
 
     await pool
       .request()
       .input('id', sql.NVarChar(64), account.id)
+      .input('tenantId', sql.NVarChar(64), tenantId)
       .input('name', sql.NVarChar(128), account.name)
       .input('type', sql.NVarChar(64), account.type)
       .input('initialBalance', sql.BigInt, Math.round(account.initialBalance))
       .input('color', sql.NVarChar(32), account.color)
       .query(`
-        INSERT INTO ${table} ([id], [name], [type], [initialBalance], [color])
-        VALUES (@id, @name, @type, @initialBalance, @color)
+        INSERT INTO ${table} ([id], [tenantId], [name], [type], [initialBalance], [color])
+        VALUES (@id, @tenantId, @name, @type, @initialBalance, @color)
       `);
 
     return account;
   }
 
-  async update(id: string, account: Omit<Account, 'id'>): Promise<Account | undefined> {
+  async update(tenantId: string, id: string, account: Omit<Account, 'id'>): Promise<Account | undefined> {
     const pool = await getMssqlPool();
     const table = getAccountsTableName();
 
     const result = await pool
       .request()
+      .input('tenantId', sql.NVarChar(64), tenantId)
       .input('id', sql.NVarChar(64), id)
       .input('name', sql.NVarChar(128), account.name)
       .input('type', sql.NVarChar(64), account.type)
@@ -81,7 +88,7 @@ export class MsSqlAccountRepository implements IAccountRepository {
       .query(`
         UPDATE ${table}
         SET [name] = @name, [type] = @type, [initialBalance] = @initialBalance, [color] = @color
-        WHERE [id] = @id;
+        WHERE [tenantId] = @tenantId AND [id] = @id;
 
         SELECT @@ROWCOUNT AS [affected];
       `);
@@ -97,19 +104,23 @@ export class MsSqlAccountRepository implements IAccountRepository {
     };
   }
 
-  async delete(id: string): Promise<boolean> {
+  async delete(tenantId: string, id: string): Promise<boolean> {
     const pool = await getMssqlPool();
     const table = getAccountsTableName();
     const transactionsTable = getTransactionsTableName();
 
-    const balanceResult = await pool.request().input('id', sql.NVarChar(64), id).query(`
+    const balanceResult = await pool
+      .request()
+      .input('tenantId', sql.NVarChar(64), tenantId)
+      .input('id', sql.NVarChar(64), id)
+      .query(`
       SELECT
         a.[id] AS [id],
         CAST(a.[initialBalance] AS BIGINT)
         + ISNULL(SUM(CASE WHEN t.[type] = 'Income' THEN CAST(t.[amount] AS BIGINT) ELSE -CAST(t.[amount] AS BIGINT) END), 0) AS [balance]
       FROM ${table} a
-      LEFT JOIN ${transactionsTable} t ON t.[accountId] = a.[id]
-      WHERE a.[id] = @id
+      LEFT JOIN ${transactionsTable} t ON t.[tenantId] = a.[tenantId] AND t.[accountId] = a.[id]
+      WHERE a.[tenantId] = @tenantId AND a.[id] = @id
       GROUP BY a.[id], a.[initialBalance]
     `);
 
@@ -127,9 +138,13 @@ export class MsSqlAccountRepository implements IAccountRepository {
       throw new Error('ACCOUNT_BALANCE_NOT_ZERO');
     }
 
-    const result = await pool.request().input('id', sql.NVarChar(64), id).query(`
+    const result = await pool
+      .request()
+      .input('tenantId', sql.NVarChar(64), tenantId)
+      .input('id', sql.NVarChar(64), id)
+      .query(`
       DELETE FROM ${table}
-      WHERE [id] = @id;
+      WHERE [tenantId] = @tenantId AND [id] = @id;
 
       SELECT @@ROWCOUNT AS [affected];
     `);

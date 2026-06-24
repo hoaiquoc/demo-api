@@ -6,8 +6,10 @@ import accountsRoutes from './routes/accounts-routes';
 import categoriesRoutes from './routes/categories-routes';
 import transactionsRoutes from './routes/transactions-routes';
 import transfersRoutes from './routes/transfers-routes';
+import spendingAlertsRoutes from './routes/spending-alerts-routes';
 import { swaggerDocument } from './swagger';
 import { getMssqlPool, isMssqlEnabled } from './db/mssql';
+import { requireAuth } from './middleware/auth';
 
 const app = express();
 const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS;
@@ -54,9 +56,11 @@ app.get('/health/db', async (_request, response) => {
 
 app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 app.use('/api/auth', authRoutes);
+app.use('/api', requireAuth);
 app.use('/api/accounts', accountsRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/transactions', transactionsRoutes);
 app.use('/api/transfers', transfersRoutes);
+app.use('/api/spending-alerts', spendingAlertsRoutes);
 
 export default app;

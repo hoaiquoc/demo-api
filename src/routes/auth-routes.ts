@@ -13,6 +13,7 @@ if (!isMssqlEnabled()) {
   const authController = new AuthController(authRepository);
 
   router.post('/login', authController.login);
+  router.post('/register', authController.register);
 }
 
 export default router;

@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { closeMssqlPool, getMssqlPool, isMssqlEnabled, sql } from '../db/mssql';
 import { hashPassword } from '../utils/password';
 
+const DEFAULT_TENANT_ID = 'tenant_default';
+
 function sanitizeIdentifier(value: string, fallback: string) {
   const trimmed = value.trim();
   const cleaned = trimmed.replace(/[^a-zA-Z0-9_]/g, '');
@@ -30,6 +32,7 @@ async function ensureUsersTable(pool: sql.ConnectionPool, fullName: string) {
     BEGIN
       CREATE TABLE ${fullName} (
         [id] NVARCHAR(64) NOT NULL PRIMARY KEY,
+        [tenantId] NVARCHAR(64) NOT NULL CONSTRAINT DF_Users_TenantId DEFAULT ('${DEFAULT_TENANT_ID}'),
         [email] NVARCHAR(256) NOT NULL UNIQUE,
         [fullName] NVARCHAR(128) NOT NULL,
         [role] NVARCHAR(16) NOT NULL,
@@ -42,6 +45,70 @@ async function ensureUsersTable(pool: sql.ConnectionPool, fullName: string) {
       )
     END
   `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'tenantId'
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ADD [tenantId] NVARCHAR(64) NOT NULL CONSTRAINT DF_Users_TenantId DEFAULT ('${DEFAULT_TENANT_ID}');
+    END
+  `);
+}
+
+async function ensureTenantsTable(pool: sql.ConnectionPool, fullName: string) {
+  await pool.request().query(`
+    IF OBJECT_ID(N'${fullName}', N'U') IS NULL
+    BEGIN
+      CREATE TABLE ${fullName} (
+        [id] NVARCHAR(64) NOT NULL PRIMARY KEY,
+        [name] NVARCHAR(128) NOT NULL,
+        [ownerEmail] NVARCHAR(256) NOT NULL,
+        [createdAt] DATETIME2 NOT NULL CONSTRAINT DF_Tenants_CreatedAt DEFAULT (SYSUTCDATETIME())
+      )
+    END
+  `);
+}
+
+async function ensureSessionsTable(pool: sql.ConnectionPool, fullName: string) {
+  await pool.request().query(`
+    IF OBJECT_ID(N'${fullName}', N'U') IS NULL
+    BEGIN
+      CREATE TABLE ${fullName} (
+        [token] NVARCHAR(128) NOT NULL PRIMARY KEY,
+        [userId] NVARCHAR(64) NOT NULL,
+        [tenantId] NVARCHAR(64) NOT NULL,
+        [createdAt] DATETIME2 NOT NULL CONSTRAINT DF_Sessions_CreatedAt DEFAULT (SYSUTCDATETIME()),
+        [expiresAt] DATETIME2 NOT NULL
+      )
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.indexes
+      WHERE name = 'IX_Sessions_UserId'
+        AND object_id = OBJECT_ID(N'${fullName}')
+    )
+    BEGIN
+      CREATE INDEX IX_Sessions_UserId ON ${fullName} ([userId])
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.indexes
+      WHERE name = 'IX_Sessions_TenantId'
+        AND object_id = OBJECT_ID(N'${fullName}')
+    )
+    BEGIN
+      CREATE INDEX IX_Sessions_TenantId ON ${fullName} ([tenantId])
+    END
+  `);
 }
 
 async function ensureTransactionsTable(pool: sql.ConnectionPool, fullName: string) {
@@ -50,6 +117,7 @@ async function ensureTransactionsTable(pool: sql.ConnectionPool, fullName: strin
     BEGIN
       CREATE TABLE ${fullName} (
         [id] NVARCHAR(64) NOT NULL PRIMARY KEY,
+        [tenantId] NVARCHAR(64) NOT NULL CONSTRAINT DF_Transactions_TenantId DEFAULT ('${DEFAULT_TENANT_ID}'),
         [title] NVARCHAR(255) NOT NULL,
         [accountId] NVARCHAR(64) NOT NULL,
         [categoryId] NVARCHAR(64) NOT NULL,
@@ -57,9 +125,24 @@ async function ensureTransactionsTable(pool: sql.ConnectionPool, fullName: strin
         [type] NVARCHAR(16) NOT NULL,
         [occurredAt] DATETIME2 NOT NULL,
         [status] NVARCHAR(16) NOT NULL CONSTRAINT DF_Transactions_Status DEFAULT ('Completed'),
+        [adjustmentOfId] NVARCHAR(64) NULL,
+        [adjustedById] NVARCHAR(64) NULL,
         [note] NVARCHAR(MAX) NULL,
         [createdBy] NVARCHAR(128) NOT NULL
       )
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'tenantId'
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ADD [tenantId] NVARCHAR(64) NOT NULL CONSTRAINT DF_Transactions_TenantId DEFAULT ('${DEFAULT_TENANT_ID}');
     END
   `);
 
@@ -73,6 +156,32 @@ async function ensureTransactionsTable(pool: sql.ConnectionPool, fullName: strin
     BEGIN
       ALTER TABLE ${fullName}
       ADD [status] NVARCHAR(16) NOT NULL CONSTRAINT DF_Transactions_Status DEFAULT ('Completed');
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'adjustmentOfId'
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ADD [adjustmentOfId] NVARCHAR(64) NULL;
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'adjustedById'
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ADD [adjustedById] NVARCHAR(64) NULL;
     END
   `);
 
@@ -128,12 +237,37 @@ async function ensureAccountsTable(pool: sql.ConnectionPool, fullName: string) {
     BEGIN
       CREATE TABLE ${fullName} (
         [id] NVARCHAR(64) NOT NULL PRIMARY KEY,
+        [tenantId] NVARCHAR(64) NOT NULL CONSTRAINT DF_Accounts_TenantId DEFAULT ('${DEFAULT_TENANT_ID}'),
         [name] NVARCHAR(128) NOT NULL,
         [type] NVARCHAR(64) NOT NULL,
         [initialBalance] BIGINT NOT NULL,
         [color] NVARCHAR(32) NOT NULL,
         [createdAt] DATETIME2 NOT NULL CONSTRAINT DF_Accounts_CreatedAt DEFAULT (SYSUTCDATETIME())
       )
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'tenantId'
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ADD [tenantId] NVARCHAR(64) NOT NULL CONSTRAINT DF_Accounts_TenantId DEFAULT ('${DEFAULT_TENANT_ID}');
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.indexes
+      WHERE name = 'IX_Accounts_TenantId'
+        AND object_id = OBJECT_ID(N'${fullName}')
+    )
+    BEGIN
+      CREATE INDEX IX_Accounts_TenantId ON ${fullName} ([tenantId])
     END
   `);
 }
@@ -144,12 +278,64 @@ async function ensureCategoriesTable(pool: sql.ConnectionPool, fullName: string)
     BEGIN
       CREATE TABLE ${fullName} (
         [id] NVARCHAR(64) NOT NULL PRIMARY KEY,
+        [tenantId] NVARCHAR(64) NOT NULL CONSTRAINT DF_Categories_TenantId DEFAULT ('${DEFAULT_TENANT_ID}'),
         [name] NVARCHAR(128) NOT NULL,
         [type] NVARCHAR(16) NOT NULL,
         [icon] NVARCHAR(8) NOT NULL,
         [color] NVARCHAR(64) NOT NULL,
         [createdAt] DATETIME2 NOT NULL CONSTRAINT DF_Categories_CreatedAt DEFAULT (SYSUTCDATETIME())
       )
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'tenantId'
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ADD [tenantId] NVARCHAR(64) NOT NULL CONSTRAINT DF_Categories_TenantId DEFAULT ('${DEFAULT_TENANT_ID}');
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.indexes
+      WHERE name = 'IX_Categories_TenantId'
+        AND object_id = OBJECT_ID(N'${fullName}')
+    )
+    BEGIN
+      CREATE INDEX IX_Categories_TenantId ON ${fullName} ([tenantId])
+    END
+  `);
+}
+
+async function ensureSpendingAlertsTable(pool: sql.ConnectionPool, fullName: string) {
+  await pool.request().query(`
+    IF OBJECT_ID(N'${fullName}', N'U') IS NULL
+    BEGIN
+      CREATE TABLE ${fullName} (
+        [id] NVARCHAR(64) NOT NULL PRIMARY KEY,
+        [tenantId] NVARCHAR(64) NOT NULL,
+        [period] NVARCHAR(16) NOT NULL,
+        [thresholdAmount] BIGINT NOT NULL CONSTRAINT DF_SpendingAlerts_Threshold DEFAULT (0),
+        [createdAt] DATETIME2 NOT NULL CONSTRAINT DF_SpendingAlerts_CreatedAt DEFAULT (SYSUTCDATETIME()),
+        [updatedAt] DATETIME2 NOT NULL CONSTRAINT DF_SpendingAlerts_UpdatedAt DEFAULT (SYSUTCDATETIME())
+      )
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.indexes
+      WHERE name = 'UX_SpendingAlerts_Tenant_Period'
+        AND object_id = OBJECT_ID(N'${fullName}')
+    )
+    BEGIN
+      CREATE UNIQUE INDEX UX_SpendingAlerts_Tenant_Period ON ${fullName} ([tenantId], [period])
     END
   `);
 }
@@ -221,14 +407,36 @@ async function main() {
   const transactionsTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_TRANSACTIONS_TABLE', 'Transactions');
   const accountsTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_ACCOUNTS_TABLE', 'Accounts');
   const categoriesTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_CATEGORIES_TABLE', 'Categories');
+  const tenantsTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_TENANTS_TABLE', 'Tenants');
+  const sessionsTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_SESSIONS_TABLE', 'Sessions');
+  const spendingAlertsTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_SPENDING_ALERTS_TABLE', 'SpendingAlerts');
 
   const pool = await getMssqlPool();
 
   await ensureSchema(pool, usersTable.schema);
+  await ensureTenantsTable(pool, tenantsTable.full);
   await ensureUsersTable(pool, usersTable.full);
+  await ensureSessionsTable(pool, sessionsTable.full);
   await ensureTransactionsTable(pool, transactionsTable.full);
   await ensureAccountsTable(pool, accountsTable.full);
   await ensureCategoriesTable(pool, categoriesTable.full);
+  await ensureSpendingAlertsTable(pool, spendingAlertsTable.full);
+
+  await pool
+    .request()
+    .input('id', sql.NVarChar(64), DEFAULT_TENANT_ID)
+    .input('name', sql.NVarChar(128), 'Mặc định')
+    .input('ownerEmail', sql.NVarChar(256), 'system@local')
+    .query(`
+      MERGE ${tenantsTable.full} AS target
+      USING (SELECT @id AS id) AS source
+      ON target.id = source.id
+      WHEN MATCHED THEN
+        UPDATE SET [name] = @name, [ownerEmail] = @ownerEmail
+      WHEN NOT MATCHED THEN
+        INSERT ([id], [name], [ownerEmail])
+        VALUES (@id, @name, @ownerEmail);
+    `);
 
   await upsertUser(pool, usersTable.full, {
     email: 'quoc@chitieu.vn',
@@ -246,30 +454,6 @@ async function main() {
     avatar: 'QH',
     spaces: 1,
     password: '123456',
-  });
-
-  await upsertAccount(pool, accountsTable.full, {
-    id: 'cash',
-    name: 'Tiền mặt',
-    type: 'Ví cá nhân',
-    initialBalance: 2500000,
-    color: 'bg-emerald-500',
-  });
-
-  await upsertAccount(pool, accountsTable.full, {
-    id: 'bank',
-    name: 'VCB',
-    type: 'Tài khoản ngân hàng',
-    initialBalance: 12000000,
-    color: 'bg-sky-500',
-  });
-
-  await upsertAccount(pool, accountsTable.full, {
-    id: 'travel',
-    name: 'Quỹ du lịch',
-    type: 'Ngân sách mục tiêu',
-    initialBalance: 5000000,
-    color: 'bg-violet-500',
   });
 
   await upsertCategory(pool, categoriesTable.full, {
@@ -326,6 +510,22 @@ async function main() {
     type: 'Expense',
     icon: 'CT',
     color: 'bg-slate-100 text-slate-700',
+  });
+
+  await upsertCategory(pool, categoriesTable.full, {
+    id: 'balance_income',
+    name: 'Cân đối (Thu)',
+    type: 'Income',
+    icon: 'CD',
+    color: 'bg-amber-100 text-amber-800',
+  });
+
+  await upsertCategory(pool, categoriesTable.full, {
+    id: 'balance_expense',
+    name: 'Cân đối (Chi)',
+    type: 'Expense',
+    icon: 'CD',
+    color: 'bg-amber-100 text-amber-800',
   });
 
   process.stdout.write('Migration completed.\n');

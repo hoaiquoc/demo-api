@@ -5,6 +5,10 @@ import { TransactionItem } from '../models/transaction-item';
 export class TransactionsController {
   constructor(private readonly transactionRepository: ITransactionRepository) {}
 
+  private getTenantId(response: Response): string {
+    return String((response.locals as Record<string, unknown>).tenantId ?? '');
+  }
+
   private getIdParam(request: Request): string {
     const { id } = request.params;
     return Array.isArray(id) ? id[0] : id;
@@ -12,7 +16,7 @@ export class TransactionsController {
 
   getAll = async (_request: Request, response: Response): Promise<void> => {
     try {
-      const items = await this.transactionRepository.getAll();
+      const items = await this.transactionRepository.getAll(this.getTenantId(response));
       response.json(items);
     } catch {
       response.status(500).json({ message: 'Internal server error' });
@@ -21,7 +25,7 @@ export class TransactionsController {
 
   getById = async (request: Request, response: Response): Promise<void> => {
     try {
-      const transaction = await this.transactionRepository.getById(this.getIdParam(request));
+      const transaction = await this.transactionRepository.getById(this.getTenantId(response), this.getIdParam(request));
       if (!transaction) {
         response.status(404).json({ message: 'Transaction not found' });
         return;
@@ -36,8 +40,11 @@ export class TransactionsController {
   create = async (request: Request, response: Response): Promise<void> => {
     try {
       const payload = request.body as Omit<TransactionItem, 'id'>;
-      const created = await this.transactionRepository.add({
+      const rawAmount = Number((payload as Record<string, unknown>).amount ?? 0);
+      const amount = Number.isFinite(rawAmount) ? Math.abs(Math.round(rawAmount)) : 0;
+      const created = await this.transactionRepository.add(this.getTenantId(response), {
         ...payload,
+        amount,
         status: payload.status === 'Draft' || payload.status === 'Pending' || payload.status === 'Completed' ? payload.status : 'Completed',
       });
       response.status(201).json(created);
@@ -47,33 +54,45 @@ export class TransactionsController {
   };
 
   update = async (request: Request, response: Response): Promise<void> => {
+    response.status(405).json({ message: 'Không cho phép sửa trực tiếp. Hãy tạo phiếu điều chỉnh.' });
+  };
+
+  adjust = async (request: Request, response: Response): Promise<void> => {
     try {
-      const payload = request.body as Omit<TransactionItem, 'id'>;
-      const updated = await this.transactionRepository.update(this.getIdParam(request), {
+      const payload = request.body as Omit<TransactionItem, 'id' | 'adjustmentOfId' | 'adjustedById'>;
+      const rawAmount = Number((payload as Record<string, unknown>).amount ?? 0);
+      const amount = Number.isFinite(rawAmount) ? Math.abs(Math.round(rawAmount)) : 0;
+      const result = await this.transactionRepository.adjust(this.getTenantId(response), this.getIdParam(request), {
         ...payload,
+        amount,
         status: payload.status === 'Draft' || payload.status === 'Pending' || payload.status === 'Completed' ? payload.status : 'Completed',
       });
-      if (!updated) {
+      response.status(201).json(result);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'TRANSACTION_NOT_FOUND') {
         response.status(404).json({ message: 'Transaction not found' });
         return;
       }
 
-      response.json(updated);
-    } catch {
+      if (error instanceof Error && (error.message === 'TRANSACTION_ALREADY_ADJUSTED' || error.message === 'CANNOT_ADJUST_ADJUSTMENT')) {
+        response.status(409).json({ message: 'Phiếu này không thể điều chỉnh' });
+        return;
+      }
+
       response.status(500).json({ message: 'Internal server error' });
     }
   };
 
   delete = async (request: Request, response: Response): Promise<void> => {
     try {
-      const deleted = await this.transactionRepository.delete(this.getIdParam(request));
-      if (!deleted) {
-        response.status(404).json({ message: 'Transaction not found' });
+      await this.transactionRepository.delete(this.getTenantId(response), this.getIdParam(request));
+      response.status(204).send();
+    } catch (error) {
+      if (error instanceof Error && error.message === 'TRANSACTION_DELETE_NOT_ALLOWED') {
+        response.status(405).json({ message: 'Không cho phép xoá phiếu' });
         return;
       }
 
-      response.status(204).send();
-    } catch {
       response.status(500).json({ message: 'Internal server error' });
     }
   };

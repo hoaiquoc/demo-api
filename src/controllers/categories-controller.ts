@@ -5,6 +5,10 @@ import { Category } from '../models/category';
 export class CategoriesController {
   constructor(private readonly categoryRepository: ICategoryRepository) {}
 
+  private getTenantId(response: Response): string {
+    return String((response.locals as Record<string, unknown>).tenantId ?? '');
+  }
+
   private getIdParam(request: Request): string {
     const { id } = request.params;
     return Array.isArray(id) ? id[0] : id;
@@ -12,7 +16,7 @@ export class CategoriesController {
 
   getAll = async (_request: Request, response: Response): Promise<void> => {
     try {
-      const items = await this.categoryRepository.getAll();
+      const items = await this.categoryRepository.getAll(this.getTenantId(response));
       response.json(items);
     } catch {
       response.status(500).json({ message: 'Internal server error' });
@@ -21,7 +25,7 @@ export class CategoriesController {
 
   getById = async (request: Request, response: Response): Promise<void> => {
     try {
-      const category = await this.categoryRepository.getById(this.getIdParam(request));
+      const category = await this.categoryRepository.getById(this.getTenantId(response), this.getIdParam(request));
       if (!category) {
         response.status(404).json({ message: 'Category not found' });
         return;
@@ -41,7 +45,7 @@ export class CategoriesController {
         return;
       }
 
-      const created = await this.categoryRepository.add(payload);
+      const created = await this.categoryRepository.add(this.getTenantId(response), payload);
       response.status(201).json(created);
     } catch {
       response.status(500).json({ message: 'Internal server error' });
@@ -51,7 +55,7 @@ export class CategoriesController {
   update = async (request: Request, response: Response): Promise<void> => {
     try {
       const payload = request.body as Omit<Category, 'id'>;
-      const updated = await this.categoryRepository.update(this.getIdParam(request), payload);
+      const updated = await this.categoryRepository.update(this.getTenantId(response), this.getIdParam(request), payload);
       if (!updated) {
         response.status(404).json({ message: 'Category not found' });
         return;
@@ -65,7 +69,7 @@ export class CategoriesController {
 
   delete = async (request: Request, response: Response): Promise<void> => {
     try {
-      const deleted = await this.categoryRepository.delete(this.getIdParam(request));
+      const deleted = await this.categoryRepository.delete(this.getTenantId(response), this.getIdParam(request));
       if (!deleted) {
         response.status(404).json({ message: 'Category not found' });
         return;
@@ -77,4 +81,3 @@ export class CategoriesController {
     }
   };
 }
-

@@ -9,4 +9,6 @@ export interface TransactionItem {
   status: 'Draft' | 'Pending' | 'Completed';
   note?: string;
   createdBy: string;
+  adjustmentOfId?: string;
+  adjustedById?: string;
 }

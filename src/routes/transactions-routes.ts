@@ -15,6 +15,7 @@ if (!isMssqlEnabled()) {
   router.get('/', transactionsController.getAll);
   router.get('/:id', transactionsController.getById);
   router.post('/', transactionsController.create);
+  router.post('/:id/adjust', transactionsController.adjust);
   router.put('/:id', transactionsController.update);
   router.delete('/:id', transactionsController.delete);
 }

@@ -17,6 +17,7 @@ export interface LoginRequest {
 
 export interface AuthUser {
   id: string;
+  tenantId: string;
   email: string;
   fullName: string;
   role: UserRole;
@@ -27,4 +28,11 @@ export interface AuthUser {
 export interface LoginResponse {
   accessToken: string;
   user: AuthUser;
+}
+
+export interface RegisterRequest {
+  tenantName: string;
+  fullName: string;
+  email: string;
+  password: string;
 }

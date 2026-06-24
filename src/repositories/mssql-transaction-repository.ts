@@ -5,11 +5,11 @@ import { getMssqlPool, sql } from '../db/mssql';
 import { getTransactionsTableName } from '../db/schema';
 
 export class MsSqlTransactionRepository implements ITransactionRepository {
-  async getAll(): Promise<TransactionItem[]> {
+  async getAll(tenantId: string): Promise<TransactionItem[]> {
     const pool = await getMssqlPool();
     const table = getTransactionsTableName();
 
-    const result = await pool.request().query(`
+    const result = await pool.request().input('tenantId', sql.NVarChar(64), tenantId).query(`
       SELECT
         [id],
         [title],
@@ -20,8 +20,11 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
         [occurredAt],
         [status],
         [note],
-        [createdBy]
+        [createdBy],
+        [adjustmentOfId],
+        [adjustedById]
       FROM ${table}
+      WHERE [tenantId] = @tenantId
       ORDER BY [occurredAt] DESC
     `);
 
@@ -38,14 +41,20 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
       status: row.status === 'Draft' || row.status === 'Pending' || row.status === 'Completed' ? row.status : 'Completed',
       note: row.note == null ? '' : String(row.note),
       createdBy: String(row.createdBy),
+      adjustmentOfId: row.adjustmentOfId == null ? undefined : String(row.adjustmentOfId),
+      adjustedById: row.adjustedById == null ? undefined : String(row.adjustedById),
     }));
   }
 
-  async getById(id: string): Promise<TransactionItem | undefined> {
+  async getById(tenantId: string, id: string): Promise<TransactionItem | undefined> {
     const pool = await getMssqlPool();
     const table = getTransactionsTableName();
 
-    const result = await pool.request().input('id', sql.NVarChar(64), id).query(`
+    const result = await pool
+      .request()
+      .input('tenantId', sql.NVarChar(64), tenantId)
+      .input('id', sql.NVarChar(64), id)
+      .query(`
       SELECT TOP 1
         [id],
         [title],
@@ -56,9 +65,11 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
         [occurredAt],
         [status],
         [note],
-        [createdBy]
+        [createdBy],
+        [adjustmentOfId],
+        [adjustedById]
       FROM ${table}
-      WHERE [id] = @id
+      WHERE [tenantId] = @tenantId AND [id] = @id
     `);
 
     const row = result.recordset[0];
@@ -77,10 +88,12 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
       status: row.status === 'Draft' || row.status === 'Pending' || row.status === 'Completed' ? row.status : 'Completed',
       note: row.note == null ? '' : String(row.note),
       createdBy: String(row.createdBy),
+      adjustmentOfId: row.adjustmentOfId == null ? undefined : String(row.adjustmentOfId),
+      adjustedById: row.adjustedById == null ? undefined : String(row.adjustedById),
     };
   }
 
-  async add(transaction: Omit<TransactionItem, 'id'>): Promise<TransactionItem> {
+  async add(tenantId: string, transaction: Omit<TransactionItem, 'id'>): Promise<TransactionItem> {
     const pool = await getMssqlPool();
     const table = getTransactionsTableName();
     const id = randomUUID();
@@ -88,6 +101,7 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
     await pool
       .request()
       .input('id', sql.NVarChar(64), id)
+      .input('tenantId', sql.NVarChar(64), tenantId)
       .input('title', sql.NVarChar(255), transaction.title)
       .input('accountId', sql.NVarChar(64), transaction.accountId)
       .input('categoryId', sql.NVarChar(64), transaction.categoryId)
@@ -99,20 +113,133 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
       .input('createdBy', sql.NVarChar(128), transaction.createdBy)
       .query(`
         INSERT INTO ${table}
-          ([id], [title], [accountId], [categoryId], [amount], [type], [occurredAt], [status], [note], [createdBy])
+          ([id], [tenantId], [title], [accountId], [categoryId], [amount], [type], [occurredAt], [status], [note], [createdBy])
         VALUES
-          (@id, @title, @accountId, @categoryId, @amount, @type, @occurredAt, @status, @note, @createdBy)
+          (@id, @tenantId, @title, @accountId, @categoryId, @amount, @type, @occurredAt, @status, @note, @createdBy)
       `);
 
     return { id, ...transaction };
   }
 
-  async update(id: string, transaction: Omit<TransactionItem, 'id'>): Promise<TransactionItem | undefined> {
+  async adjust(
+    tenantId: string,
+    id: string,
+    transaction: Omit<TransactionItem, 'id' | 'adjustmentOfId' | 'adjustedById'>,
+  ): Promise<{ original: TransactionItem; adjustment: TransactionItem }> {
+    const pool = await getMssqlPool();
+    const table = getTransactionsTableName();
+    const adjustmentId = randomUUID();
+    const sqlTransaction = new sql.Transaction(pool);
+
+    await sqlTransaction.begin();
+
+    try {
+      const lookup = await new sql.Request(sqlTransaction)
+        .input('tenantId', sql.NVarChar(64), tenantId)
+        .input('id', sql.NVarChar(64), id)
+        .query(`
+        SELECT TOP 1
+          [id],
+          [title],
+          [accountId],
+          [categoryId],
+          [amount],
+          [type],
+          [occurredAt],
+          [status],
+          [note],
+          [createdBy],
+          [adjustmentOfId],
+          [adjustedById]
+        FROM ${table}
+        WHERE [tenantId] = @tenantId AND [id] = @id
+      `);
+
+      const originalRow = lookup.recordset?.[0] as Record<string, unknown> | undefined;
+      if (!originalRow) {
+        throw new Error('TRANSACTION_NOT_FOUND');
+      }
+
+      if (originalRow.adjustmentOfId != null) {
+        throw new Error('CANNOT_ADJUST_ADJUSTMENT');
+      }
+
+      if (originalRow.adjustedById != null) {
+        throw new Error('TRANSACTION_ALREADY_ADJUSTED');
+      }
+
+      await new sql.Request(sqlTransaction)
+        .input('id', sql.NVarChar(64), adjustmentId)
+        .input('tenantId', sql.NVarChar(64), tenantId)
+        .input('title', sql.NVarChar(255), transaction.title)
+        .input('accountId', sql.NVarChar(64), transaction.accountId)
+        .input('categoryId', sql.NVarChar(64), transaction.categoryId)
+        .input('amount', sql.BigInt, Math.round(transaction.amount))
+        .input('type', sql.NVarChar(16), transaction.type)
+        .input('occurredAt', sql.DateTime2, new Date(transaction.occurredAt))
+        .input('status', sql.NVarChar(16), transaction.status)
+        .input('note', sql.NVarChar(sql.MAX), transaction.note ?? '')
+        .input('createdBy', sql.NVarChar(128), transaction.createdBy)
+        .input('adjustmentOfId', sql.NVarChar(64), id)
+        .query(`
+          INSERT INTO ${table}
+            ([id], [tenantId], [title], [accountId], [categoryId], [amount], [type], [occurredAt], [status], [note], [createdBy], [adjustmentOfId])
+          VALUES
+            (@id, @tenantId, @title, @accountId, @categoryId, @amount, @type, @occurredAt, @status, @note, @createdBy, @adjustmentOfId)
+        `);
+
+      await new sql.Request(sqlTransaction)
+        .input('tenantId', sql.NVarChar(64), tenantId)
+        .input('id', sql.NVarChar(64), id)
+        .input('adjustedById', sql.NVarChar(64), adjustmentId)
+        .query(`
+          UPDATE ${table}
+          SET [adjustedById] = @adjustedById
+          WHERE [tenantId] = @tenantId AND [id] = @id;
+
+          SELECT @@ROWCOUNT AS [affected];
+        `);
+
+      await sqlTransaction.commit();
+
+      const original: TransactionItem = {
+        id: String(originalRow.id),
+        title: String(originalRow.title),
+        accountId: String(originalRow.accountId),
+        categoryId: String(originalRow.categoryId),
+        amount: Number(originalRow.amount),
+        type: originalRow.type === 'Income' ? 'Income' : 'Expense',
+        occurredAt: originalRow.occurredAt instanceof Date ? originalRow.occurredAt.toISOString() : String(originalRow.occurredAt),
+        status:
+          originalRow.status === 'Draft' || originalRow.status === 'Pending' || originalRow.status === 'Completed'
+            ? (originalRow.status as 'Draft' | 'Pending' | 'Completed')
+            : 'Completed',
+        note: originalRow.note == null ? '' : String(originalRow.note),
+        createdBy: String(originalRow.createdBy),
+        adjustmentOfId: originalRow.adjustmentOfId == null ? undefined : String(originalRow.adjustmentOfId),
+        adjustedById: adjustmentId,
+      };
+
+      const adjustment: TransactionItem = {
+        id: adjustmentId,
+        ...transaction,
+        adjustmentOfId: id,
+      };
+
+      return { original, adjustment };
+    } catch (error) {
+      await sqlTransaction.rollback();
+      throw error;
+    }
+  }
+
+  async update(tenantId: string, id: string, transaction: Omit<TransactionItem, 'id'>): Promise<TransactionItem | undefined> {
     const pool = await getMssqlPool();
     const table = getTransactionsTableName();
 
     const result = await pool
       .request()
+      .input('tenantId', sql.NVarChar(64), tenantId)
       .input('id', sql.NVarChar(64), id)
       .input('title', sql.NVarChar(255), transaction.title)
       .input('accountId', sql.NVarChar(64), transaction.accountId)
@@ -135,7 +262,7 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
           [status] = @status,
           [note] = @note,
           [createdBy] = @createdBy
-        WHERE [id] = @id;
+        WHERE [tenantId] = @tenantId AND [id] = @id;
 
         SELECT @@ROWCOUNT AS [affected];
       `);
@@ -148,18 +275,7 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
     return { id, ...transaction };
   }
 
-  async delete(id: string): Promise<boolean> {
-    const pool = await getMssqlPool();
-    const table = getTransactionsTableName();
-
-    const result = await pool.request().input('id', sql.NVarChar(64), id).query(`
-      DELETE FROM ${table}
-      WHERE [id] = @id;
-
-      SELECT @@ROWCOUNT AS [affected];
-    `);
-
-    const affected = Number(result.recordset?.[0]?.affected ?? 0);
-    return affected > 0;
+  async delete(_tenantId: string, _id: string): Promise<boolean> {
+    throw new Error('TRANSACTION_DELETE_NOT_ALLOWED');
   }
 }

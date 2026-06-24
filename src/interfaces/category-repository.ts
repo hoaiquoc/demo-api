@@ -1,10 +1,9 @@
 import { Category } from '../models/category';
 
 export interface ICategoryRepository {
-  getAll(): Promise<Category[]>;
-  getById(id: string): Promise<Category | undefined>;
-  add(category: Category): Promise<Category>;
-  update(id: string, category: Omit<Category, 'id'>): Promise<Category | undefined>;
-  delete(id: string): Promise<boolean>;
+  getAll(tenantId: string): Promise<Category[]>;
+  getById(tenantId: string, id: string): Promise<Category | undefined>;
+  add(tenantId: string, category: Category): Promise<Category>;
+  update(tenantId: string, id: string, category: Omit<Category, 'id'>): Promise<Category | undefined>;
+  delete(tenantId: string, id: string): Promise<boolean>;
 }
-
