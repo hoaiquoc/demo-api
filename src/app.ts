@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import swaggerUi from 'swagger-ui-express';
+import authRoutes from './routes/auth-routes';
 import transactionsRoutes from './routes/transactions-routes';
 import { swaggerDocument } from './swagger';
 
@@ -33,6 +34,7 @@ app.get('/health', (_request, response) => {
 });
 
 app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+app.use('/api/auth', authRoutes);
 app.use('/api/transactions', transactionsRoutes);
 
 export default app;

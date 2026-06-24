@@ -1,8 +1,11 @@
 export interface TransactionItem {
   id: string;
   title: string;
+  accountId: string;
+  categoryId: string;
   amount: number;
   type: 'Income' | 'Expense';
-  transactionDate: string;
+  occurredAt: string;
   note?: string;
+  createdBy: string;
 }
