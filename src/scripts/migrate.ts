@@ -56,9 +56,23 @@ async function ensureTransactionsTable(pool: sql.ConnectionPool, fullName: strin
         [amount] BIGINT NOT NULL,
         [type] NVARCHAR(16) NOT NULL,
         [occurredAt] DATETIME2 NOT NULL,
+        [status] NVARCHAR(16) NOT NULL CONSTRAINT DF_Transactions_Status DEFAULT ('Completed'),
         [note] NVARCHAR(MAX) NULL,
         [createdBy] NVARCHAR(128) NOT NULL
       )
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'status'
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ADD [status] NVARCHAR(16) NOT NULL CONSTRAINT DF_Transactions_Status DEFAULT ('Completed');
     END
   `);
 
@@ -124,6 +138,50 @@ async function ensureAccountsTable(pool: sql.ConnectionPool, fullName: string) {
   `);
 }
 
+async function ensureCategoriesTable(pool: sql.ConnectionPool, fullName: string) {
+  await pool.request().query(`
+    IF OBJECT_ID(N'${fullName}', N'U') IS NULL
+    BEGIN
+      CREATE TABLE ${fullName} (
+        [id] NVARCHAR(64) NOT NULL PRIMARY KEY,
+        [name] NVARCHAR(128) NOT NULL,
+        [type] NVARCHAR(16) NOT NULL,
+        [icon] NVARCHAR(8) NOT NULL,
+        [color] NVARCHAR(64) NOT NULL,
+        [createdAt] DATETIME2 NOT NULL CONSTRAINT DF_Categories_CreatedAt DEFAULT (SYSUTCDATETIME())
+      )
+    END
+  `);
+}
+
+async function upsertCategory(
+  pool: sql.ConnectionPool,
+  fullName: string,
+  input: { id: string; name: string; type: string; icon: string; color: string },
+) {
+  await pool
+    .request()
+    .input('id', sql.NVarChar(64), input.id)
+    .input('name', sql.NVarChar(128), input.name)
+    .input('type', sql.NVarChar(16), input.type)
+    .input('icon', sql.NVarChar(8), input.icon)
+    .input('color', sql.NVarChar(64), input.color)
+    .query(`
+      MERGE ${fullName} AS target
+      USING (SELECT @id AS id) AS source
+      ON target.id = source.id
+      WHEN MATCHED THEN
+        UPDATE SET
+          [name] = @name,
+          [type] = @type,
+          [icon] = @icon,
+          [color] = @color
+      WHEN NOT MATCHED THEN
+        INSERT ([id], [name], [type], [icon], [color])
+        VALUES (@id, @name, @type, @icon, @color);
+    `);
+}
+
 async function upsertAccount(
   pool: sql.ConnectionPool,
   fullName: string,
@@ -162,6 +220,7 @@ async function main() {
   const usersTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_USERS_TABLE', 'Users');
   const transactionsTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_TRANSACTIONS_TABLE', 'Transactions');
   const accountsTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_ACCOUNTS_TABLE', 'Accounts');
+  const categoriesTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_CATEGORIES_TABLE', 'Categories');
 
   const pool = await getMssqlPool();
 
@@ -169,6 +228,7 @@ async function main() {
   await ensureUsersTable(pool, usersTable.full);
   await ensureTransactionsTable(pool, transactionsTable.full);
   await ensureAccountsTable(pool, accountsTable.full);
+  await ensureCategoriesTable(pool, categoriesTable.full);
 
   await upsertUser(pool, usersTable.full, {
     email: 'quoc@chitieu.vn',
@@ -210,6 +270,62 @@ async function main() {
     type: 'Ngân sách mục tiêu',
     initialBalance: 5000000,
     color: 'bg-violet-500',
+  });
+
+  await upsertCategory(pool, categoriesTable.full, {
+    id: 'salary',
+    name: 'Lương',
+    type: 'Income',
+    icon: 'LU',
+    color: 'bg-emerald-100 text-emerald-700',
+  });
+
+  await upsertCategory(pool, categoriesTable.full, {
+    id: 'freelance',
+    name: 'Freelance',
+    type: 'Income',
+    icon: 'FR',
+    color: 'bg-cyan-100 text-cyan-700',
+  });
+
+  await upsertCategory(pool, categoriesTable.full, {
+    id: 'food',
+    name: 'Ăn uống',
+    type: 'Expense',
+    icon: 'AN',
+    color: 'bg-orange-100 text-orange-700',
+  });
+
+  await upsertCategory(pool, categoriesTable.full, {
+    id: 'transport',
+    name: 'Đi lại',
+    type: 'Expense',
+    icon: 'XE',
+    color: 'bg-sky-100 text-sky-700',
+  });
+
+  await upsertCategory(pool, categoriesTable.full, {
+    id: 'shopping',
+    name: 'Mua sắm',
+    type: 'Expense',
+    icon: 'MS',
+    color: 'bg-pink-100 text-pink-700',
+  });
+
+  await upsertCategory(pool, categoriesTable.full, {
+    id: 'utilities',
+    name: 'Hóa đơn',
+    type: 'Expense',
+    icon: 'HD',
+    color: 'bg-violet-100 text-violet-700',
+  });
+
+  await upsertCategory(pool, categoriesTable.full, {
+    id: 'transfer',
+    name: 'Chuyển tiền',
+    type: 'Expense',
+    icon: 'CT',
+    color: 'bg-slate-100 text-slate-700',
   });
 
   process.stdout.write('Migration completed.\n');

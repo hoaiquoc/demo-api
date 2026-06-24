@@ -18,6 +18,7 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
         [amount],
         [type],
         [occurredAt],
+        [status],
         [note],
         [createdBy]
       FROM ${table}
@@ -34,6 +35,7 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
       amount: Number(row.amount),
       type: row.type === 'Income' ? 'Income' : 'Expense',
       occurredAt: row.occurredAt instanceof Date ? row.occurredAt.toISOString() : String(row.occurredAt),
+      status: row.status === 'Draft' || row.status === 'Pending' || row.status === 'Completed' ? row.status : 'Completed',
       note: row.note == null ? '' : String(row.note),
       createdBy: String(row.createdBy),
     }));
@@ -52,6 +54,7 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
         [amount],
         [type],
         [occurredAt],
+        [status],
         [note],
         [createdBy]
       FROM ${table}
@@ -71,6 +74,7 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
       amount: Number(row.amount),
       type: row.type === 'Income' ? 'Income' : 'Expense',
       occurredAt: row.occurredAt instanceof Date ? row.occurredAt.toISOString() : String(row.occurredAt),
+      status: row.status === 'Draft' || row.status === 'Pending' || row.status === 'Completed' ? row.status : 'Completed',
       note: row.note == null ? '' : String(row.note),
       createdBy: String(row.createdBy),
     };
@@ -90,13 +94,14 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
       .input('amount', sql.BigInt, Math.round(transaction.amount))
       .input('type', sql.NVarChar(16), transaction.type)
       .input('occurredAt', sql.DateTime2, new Date(transaction.occurredAt))
+      .input('status', sql.NVarChar(16), transaction.status)
       .input('note', sql.NVarChar(sql.MAX), transaction.note ?? '')
       .input('createdBy', sql.NVarChar(128), transaction.createdBy)
       .query(`
         INSERT INTO ${table}
-          ([id], [title], [accountId], [categoryId], [amount], [type], [occurredAt], [note], [createdBy])
+          ([id], [title], [accountId], [categoryId], [amount], [type], [occurredAt], [status], [note], [createdBy])
         VALUES
-          (@id, @title, @accountId, @categoryId, @amount, @type, @occurredAt, @note, @createdBy)
+          (@id, @title, @accountId, @categoryId, @amount, @type, @occurredAt, @status, @note, @createdBy)
       `);
 
     return { id, ...transaction };
@@ -115,6 +120,7 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
       .input('amount', sql.BigInt, Math.round(transaction.amount))
       .input('type', sql.NVarChar(16), transaction.type)
       .input('occurredAt', sql.DateTime2, new Date(transaction.occurredAt))
+      .input('status', sql.NVarChar(16), transaction.status)
       .input('note', sql.NVarChar(sql.MAX), transaction.note ?? '')
       .input('createdBy', sql.NVarChar(128), transaction.createdBy)
       .query(`
@@ -126,6 +132,7 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
           [amount] = @amount,
           [type] = @type,
           [occurredAt] = @occurredAt,
+          [status] = @status,
           [note] = @note,
           [createdBy] = @createdBy
         WHERE [id] = @id;

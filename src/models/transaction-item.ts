@@ -6,6 +6,7 @@ export interface TransactionItem {
   amount: number;
   type: 'Income' | 'Expense';
   occurredAt: string;
+  status: 'Draft' | 'Pending' | 'Completed';
   note?: string;
   createdBy: string;
 }

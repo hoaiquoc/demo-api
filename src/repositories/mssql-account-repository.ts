@@ -1,7 +1,7 @@
 import { IAccountRepository } from '../interfaces/account-repository';
 import { Account } from '../models/account';
 import { getMssqlPool, sql } from '../db/mssql';
-import { getAccountsTableName } from '../db/schema';
+import { getAccountsTableName, getTransactionsTableName } from '../db/schema';
 
 export class MsSqlAccountRepository implements IAccountRepository {
   async getAll(): Promise<Account[]> {
@@ -100,6 +100,22 @@ export class MsSqlAccountRepository implements IAccountRepository {
   async delete(id: string): Promise<boolean> {
     const pool = await getMssqlPool();
     const table = getAccountsTableName();
+    const transactionsTable = getTransactionsTableName();
+
+    const balanceResult = await pool.request().input('id', sql.NVarChar(64), id).query(`
+      SELECT
+        CAST(a.[initialBalance] AS BIGINT)
+        + ISNULL(SUM(CASE WHEN t.[type] = 'Income' THEN CAST(t.[amount] AS BIGINT) ELSE -CAST(t.[amount] AS BIGINT) END), 0) AS [balance]
+      FROM ${table} a
+      LEFT JOIN ${transactionsTable} t ON t.[accountId] = a.[id]
+      WHERE a.[id] = @id
+      GROUP BY a.[initialBalance]
+    `);
+
+    const balanceValue = Number((balanceResult.recordset?.[0] as Record<string, unknown> | undefined)?.balance ?? NaN);
+    if (!Number.isFinite(balanceValue) || balanceValue !== 0) {
+      return false;
+    }
 
     const result = await pool.request().input('id', sql.NVarChar(64), id).query(`
       DELETE FROM ${table}
@@ -112,4 +128,3 @@ export class MsSqlAccountRepository implements IAccountRepository {
     return affected > 0;
   }
 }
-

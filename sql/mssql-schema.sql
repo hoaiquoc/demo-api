@@ -20,6 +20,15 @@ CREATE TABLE [dbo].[Accounts] (
   [createdAt] DATETIME2 NOT NULL CONSTRAINT DF_Accounts_CreatedAt DEFAULT (SYSUTCDATETIME())
 );
 
+CREATE TABLE [dbo].[Categories] (
+  [id] NVARCHAR(64) NOT NULL PRIMARY KEY,
+  [name] NVARCHAR(128) NOT NULL,
+  [type] NVARCHAR(16) NOT NULL,
+  [icon] NVARCHAR(8) NOT NULL,
+  [color] NVARCHAR(64) NOT NULL,
+  [createdAt] DATETIME2 NOT NULL CONSTRAINT DF_Categories_CreatedAt DEFAULT (SYSUTCDATETIME())
+);
+
 CREATE TABLE [dbo].[Transactions] (
   [id] NVARCHAR(64) NOT NULL PRIMARY KEY,
   [title] NVARCHAR(255) NOT NULL,
@@ -28,6 +37,7 @@ CREATE TABLE [dbo].[Transactions] (
   [amount] BIGINT NOT NULL,
   [type] NVARCHAR(16) NOT NULL,
   [occurredAt] DATETIME2 NOT NULL,
+  [status] NVARCHAR(16) NOT NULL CONSTRAINT DF_Transactions_Status DEFAULT ('Completed'),
   [note] NVARCHAR(MAX) NULL,
   [createdBy] NVARCHAR(128) NOT NULL
 );

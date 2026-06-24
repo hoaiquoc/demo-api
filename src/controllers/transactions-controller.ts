@@ -36,7 +36,10 @@ export class TransactionsController {
   create = async (request: Request, response: Response): Promise<void> => {
     try {
       const payload = request.body as Omit<TransactionItem, 'id'>;
-      const created = await this.transactionRepository.add(payload);
+      const created = await this.transactionRepository.add({
+        ...payload,
+        status: payload.status === 'Draft' || payload.status === 'Pending' || payload.status === 'Completed' ? payload.status : 'Completed',
+      });
       response.status(201).json(created);
     } catch {
       response.status(500).json({ message: 'Internal server error' });
@@ -46,7 +49,10 @@ export class TransactionsController {
   update = async (request: Request, response: Response): Promise<void> => {
     try {
       const payload = request.body as Omit<TransactionItem, 'id'>;
-      const updated = await this.transactionRepository.update(this.getIdParam(request), payload);
+      const updated = await this.transactionRepository.update(this.getIdParam(request), {
+        ...payload,
+        status: payload.status === 'Draft' || payload.status === 'Pending' || payload.status === 'Completed' ? payload.status : 'Completed',
+      });
       if (!updated) {
         response.status(404).json({ message: 'Transaction not found' });
         return;

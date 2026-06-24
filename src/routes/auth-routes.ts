@@ -1,13 +1,18 @@
 import { Router } from 'express';
 import { AuthController } from '../controllers/auth-controller';
-import { AuthRepository } from '../repositories/auth-repository';
 import { MsSqlAuthRepository } from '../repositories/mssql-auth-repository';
 import { isMssqlEnabled } from '../db/mssql';
 
 const router = Router();
-const authRepository = isMssqlEnabled() ? new MsSqlAuthRepository() : new AuthRepository();
-const authController = new AuthController(authRepository);
+if (!isMssqlEnabled()) {
+  router.use((_request, response) => {
+    response.status(500).json({ message: 'MSSQL chưa được cấu hình' });
+  });
+} else {
+  const authRepository = new MsSqlAuthRepository();
+  const authController = new AuthController(authRepository);
 
-router.post('/login', authController.login);
+  router.post('/login', authController.login);
+}
 
 export default router;
