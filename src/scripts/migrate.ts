@@ -108,6 +108,50 @@ async function upsertUser(pool: sql.ConnectionPool, fullName: string, input: { e
     `);
 }
 
+async function ensureAccountsTable(pool: sql.ConnectionPool, fullName: string) {
+  await pool.request().query(`
+    IF OBJECT_ID(N'${fullName}', N'U') IS NULL
+    BEGIN
+      CREATE TABLE ${fullName} (
+        [id] NVARCHAR(64) NOT NULL PRIMARY KEY,
+        [name] NVARCHAR(128) NOT NULL,
+        [type] NVARCHAR(64) NOT NULL,
+        [initialBalance] BIGINT NOT NULL,
+        [color] NVARCHAR(32) NOT NULL,
+        [createdAt] DATETIME2 NOT NULL CONSTRAINT DF_Accounts_CreatedAt DEFAULT (SYSUTCDATETIME())
+      )
+    END
+  `);
+}
+
+async function upsertAccount(
+  pool: sql.ConnectionPool,
+  fullName: string,
+  input: { id: string; name: string; type: string; initialBalance: number; color: string },
+) {
+  await pool
+    .request()
+    .input('id', sql.NVarChar(64), input.id)
+    .input('name', sql.NVarChar(128), input.name)
+    .input('type', sql.NVarChar(64), input.type)
+    .input('initialBalance', sql.BigInt, Math.round(input.initialBalance))
+    .input('color', sql.NVarChar(32), input.color)
+    .query(`
+      MERGE ${fullName} AS target
+      USING (SELECT @id AS id) AS source
+      ON target.id = source.id
+      WHEN MATCHED THEN
+        UPDATE SET
+          [name] = @name,
+          [type] = @type,
+          [initialBalance] = @initialBalance,
+          [color] = @color
+      WHEN NOT MATCHED THEN
+        INSERT ([id], [name], [type], [initialBalance], [color])
+        VALUES (@id, @name, @type, @initialBalance, @color);
+    `);
+}
+
 async function main() {
   if (!isMssqlEnabled()) {
     process.stderr.write('MSSQL is not enabled. Set MSSQL_SERVER and MSSQL_DATABASE in .env\n');
@@ -117,12 +161,14 @@ async function main() {
 
   const usersTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_USERS_TABLE', 'Users');
   const transactionsTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_TRANSACTIONS_TABLE', 'Transactions');
+  const accountsTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_ACCOUNTS_TABLE', 'Accounts');
 
   const pool = await getMssqlPool();
 
   await ensureSchema(pool, usersTable.schema);
   await ensureUsersTable(pool, usersTable.full);
   await ensureTransactionsTable(pool, transactionsTable.full);
+  await ensureAccountsTable(pool, accountsTable.full);
 
   await upsertUser(pool, usersTable.full, {
     email: 'quoc@chitieu.vn',
@@ -140,6 +186,30 @@ async function main() {
     avatar: 'QH',
     spaces: 1,
     password: '123456',
+  });
+
+  await upsertAccount(pool, accountsTable.full, {
+    id: 'cash',
+    name: 'Tiền mặt',
+    type: 'Ví cá nhân',
+    initialBalance: 2500000,
+    color: 'bg-emerald-500',
+  });
+
+  await upsertAccount(pool, accountsTable.full, {
+    id: 'bank',
+    name: 'VCB',
+    type: 'Tài khoản ngân hàng',
+    initialBalance: 12000000,
+    color: 'bg-sky-500',
+  });
+
+  await upsertAccount(pool, accountsTable.full, {
+    id: 'travel',
+    name: 'Quỹ du lịch',
+    type: 'Ngân sách mục tiêu',
+    initialBalance: 5000000,
+    color: 'bg-violet-500',
   });
 
   process.stdout.write('Migration completed.\n');
