@@ -6,24 +6,30 @@ export class TransactionRepository implements ITransactionRepository {
   private readonly transactions: TransactionItem[] = [
     {
       id: randomUUID(),
-      title: 'An sang',
-      amount: 45000,
-      type: 'Expense',
-      transactionDate: new Date().toISOString(),
-      note: 'Banh mi va ca phe',
+      title: 'Luong thang 6',
+      accountId: 'bank',
+      categoryId: 'salary',
+      amount: 22000000,
+      type: 'Income',
+      occurredAt: new Date().toISOString(),
+      note: 'Nhan luong cong ty',
+      createdBy: 'Minh',
     },
     {
       id: randomUUID(),
-      title: 'Luong thang',
-      amount: 15000000,
-      type: 'Income',
-      transactionDate: new Date(Date.now() - 86400000).toISOString(),
-      note: 'Chuyen khoan',
+      title: 'Ca phe sang',
+      accountId: 'cash',
+      categoryId: 'food',
+      amount: 45000,
+      type: 'Expense',
+      occurredAt: new Date(Date.now() - 86400000).toISOString(),
+      note: 'Banh mi va ca phe',
+      createdBy: 'Lan',
     },
   ];
 
   getAll(): TransactionItem[] {
-    return [...this.transactions].sort((a, b) => b.transactionDate.localeCompare(a.transactionDate));
+    return [...this.transactions].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
   }
 
   getById(id: string): TransactionItem | undefined {
@@ -47,10 +53,13 @@ export class TransactionRepository implements ITransactionRepository {
     }
 
     existing.title = transaction.title;
+    existing.accountId = transaction.accountId;
+    existing.categoryId = transaction.categoryId;
     existing.amount = transaction.amount;
     existing.type = transaction.type;
-    existing.transactionDate = transaction.transactionDate;
+    existing.occurredAt = transaction.occurredAt;
     existing.note = transaction.note;
+    existing.createdBy = transaction.createdBy;
 
     return existing;
   }
