@@ -1,0 +1,185 @@
+export const swaggerDocument = {
+  openapi: '3.0.3',
+  info: {
+    title: 'QuanLyChiTieu API',
+    version: '1.0.0',
+    description: 'Node.js API for expense management',
+  },
+  servers: [
+    {
+      url: '/',
+      description: 'Current server',
+    },
+  ],
+  tags: [
+    {
+      name: 'Transactions',
+      description: 'Manage income and expense transactions',
+    },
+  ],
+  components: {
+    schemas: {
+      TransactionItem: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', example: 'a8a1d4a0-2d7b-4b1b-9a11-06db1595f230' },
+          title: { type: 'string', example: 'An sang' },
+          amount: { type: 'number', example: 45000 },
+          type: { type: 'string', enum: ['Income', 'Expense'], example: 'Expense' },
+          transactionDate: { type: 'string', format: 'date-time', example: '2026-06-24T08:00:00.000Z' },
+          note: { type: 'string', example: 'Banh mi va ca phe' },
+        },
+        required: ['id', 'title', 'amount', 'type', 'transactionDate'],
+      },
+      TransactionInput: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', example: 'Luong thang' },
+          amount: { type: 'number', example: 15000000 },
+          type: { type: 'string', enum: ['Income', 'Expense'], example: 'Income' },
+          transactionDate: { type: 'string', format: 'date-time', example: '2026-06-24T08:00:00.000Z' },
+          note: { type: 'string', example: 'Chuyen khoan' },
+        },
+        required: ['title', 'amount', 'type', 'transactionDate'],
+      },
+    },
+  },
+  paths: {
+    '/health': {
+      get: {
+        summary: 'Health check',
+        responses: {
+          200: {
+            description: 'Application is running',
+          },
+        },
+      },
+    },
+    '/api/transactions': {
+      get: {
+        tags: ['Transactions'],
+        summary: 'Get all transactions',
+        responses: {
+          200: {
+            description: 'Transaction list',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: {
+                    $ref: '#/components/schemas/TransactionItem',
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      post: {
+        tags: ['Transactions'],
+        summary: 'Create a transaction',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                $ref: '#/components/schemas/TransactionInput',
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: 'Transaction created',
+            content: {
+              'application/json': {
+                schema: {
+                  $ref: '#/components/schemas/TransactionItem',
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/api/transactions/{id}': {
+      get: {
+        tags: ['Transactions'],
+        summary: 'Get transaction by id',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          200: {
+            description: 'Transaction detail',
+            content: {
+              'application/json': {
+                schema: {
+                  $ref: '#/components/schemas/TransactionItem',
+                },
+              },
+            },
+          },
+          404: {
+            description: 'Transaction not found',
+          },
+        },
+      },
+      put: {
+        tags: ['Transactions'],
+        summary: 'Update a transaction',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                $ref: '#/components/schemas/TransactionInput',
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Transaction updated',
+          },
+          404: {
+            description: 'Transaction not found',
+          },
+        },
+      },
+      delete: {
+        tags: ['Transactions'],
+        summary: 'Delete a transaction',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          204: {
+            description: 'Transaction deleted',
+          },
+          404: {
+            description: 'Transaction not found',
+          },
+        },
+      },
+    },
+  },
+};
