@@ -237,6 +237,19 @@ async function ensureTransactionsTable(pool: sql.ConnectionPool, fullName: strin
       CREATE INDEX IX_Transactions_OccurredAt ON ${fullName} ([occurredAt] DESC)
     END
   `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.indexes
+      WHERE name = 'IX_Transactions_Tenant_OccurredAt'
+        AND object_id = OBJECT_ID(N'${fullName}')
+    )
+    BEGIN
+      CREATE INDEX IX_Transactions_Tenant_OccurredAt
+      ON ${fullName} ([tenantId], [occurredAt] DESC)
+      INCLUDE ([id], [title], [accountId], [categoryId], [amount], [type], [status], [createdBy], [adjustmentOfId], [adjustedById], [assetQuantity], [assetUnit])
+    END
+  `);
 }
 
 async function upsertUser(pool: sql.ConnectionPool, fullName: string, input: { email: string; fullName: string; role: string; avatar: string; spaces: number; password: string }) {
@@ -393,6 +406,17 @@ async function ensureCategoriesTable(pool: sql.ConnectionPool, fullName: string)
     )
     BEGIN
       CREATE INDEX IX_Categories_TenantId ON ${fullName} ([tenantId])
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.indexes
+      WHERE name = 'IX_Categories_Tenant_Type_Name'
+        AND object_id = OBJECT_ID(N'${fullName}')
+    )
+    BEGIN
+      CREATE INDEX IX_Categories_Tenant_Type_Name ON ${fullName} ([tenantId], [type], [name])
     END
   `);
 }

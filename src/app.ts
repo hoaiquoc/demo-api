@@ -1,4 +1,5 @@
 import cors from 'cors';
+import compression from 'compression';
 import express from 'express';
 import swaggerUi from 'swagger-ui-express';
 import authRoutes from './routes/auth-routes';
@@ -32,6 +33,7 @@ const corsOptions = (() => {
 })();
 
 app.use(cors(corsOptions));
+app.use(compression());
 app.use(express.json());
 app.set('etag', false);
 

@@ -2,6 +2,16 @@ import type { RequestHandler } from 'express';
 import { getMssqlPool, sql } from '../db/mssql';
 import { getSessionsTableName } from '../db/schema';
 
+type SessionCacheEntry = {
+  userId: string;
+  tenantId: string;
+  expiresAtMs: number;
+  cachedAtMs: number;
+};
+
+const AUTH_CACHE_TTL_MS = 60_000;
+const sessionCache = new Map<string, SessionCacheEntry>();
+
 export const requireAuth: RequestHandler = async (request, response, next) => {
   const authorization = request.header('authorization') ?? '';
   const token = authorization.toLowerCase().startsWith('bearer ') ? authorization.slice(7).trim() : '';
@@ -12,6 +22,19 @@ export const requireAuth: RequestHandler = async (request, response, next) => {
   }
 
   try {
+    const cached = sessionCache.get(token);
+    if (cached) {
+      const now = Date.now();
+      const cacheExpiresAt = Math.min(cached.expiresAtMs, cached.cachedAtMs + AUTH_CACHE_TTL_MS);
+      if (now < cacheExpiresAt) {
+        response.locals.userId = cached.userId;
+        response.locals.tenantId = cached.tenantId;
+        next();
+        return;
+      }
+      sessionCache.delete(token);
+    }
+
     const pool = await getMssqlPool();
     const table = getSessionsTableName();
 
@@ -33,8 +56,12 @@ export const requireAuth: RequestHandler = async (request, response, next) => {
       return;
     }
 
-    response.locals.userId = String(row.userId);
-    response.locals.tenantId = String(row.tenantId);
+    const userId = String(row.userId);
+    const tenantId = String(row.tenantId);
+    sessionCache.set(token, { userId, tenantId, expiresAtMs: expiresAt.getTime(), cachedAtMs: Date.now() });
+
+    response.locals.userId = userId;
+    response.locals.tenantId = tenantId;
     next();
   } catch {
     response.status(500).json({ message: 'Internal server error' });
