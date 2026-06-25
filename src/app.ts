@@ -33,6 +33,17 @@ const corsOptions = (() => {
 
 app.use(cors(corsOptions));
 app.use(express.json());
+app.set('etag', false);
+
+app.use((request, response, next) => {
+  if (request.path.startsWith('/api')) {
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Pragma', 'no-cache');
+    response.setHeader('Expires', '0');
+  }
+
+  next();
+});
 
 app.get('/', (_request, response) => {
   response.redirect('/swagger');
