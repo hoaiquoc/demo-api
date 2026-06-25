@@ -4,5 +4,7 @@ export interface Account {
   type: string;
   initialBalance: number;
   color: string;
+  assetCode?: string | null;
+  assetQuantity?: number | null;
+  assetUnit?: string | null;
 }
-

@@ -12,7 +12,9 @@ if (!isMssqlEnabled()) {
   const controller = new MembersController();
   router.get('/', controller.getAll);
   router.post('/', controller.create);
+  router.put('/:id/role', controller.updateRole);
+  router.put('/:id/password', controller.resetPassword);
+  router.delete('/:id', controller.deactivate);
 }
 
 export default router;
-

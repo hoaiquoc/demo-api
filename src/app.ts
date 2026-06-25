@@ -8,6 +8,8 @@ import transactionsRoutes from './routes/transactions-routes';
 import transfersRoutes from './routes/transfers-routes';
 import spendingAlertsRoutes from './routes/spending-alerts-routes';
 import membersRoutes from './routes/members-routes';
+import budgetsRoutes from './routes/budgets-routes';
+import marketPricesRoutes from './routes/market-prices-routes';
 import { swaggerDocument } from './swagger';
 import { getMssqlPool, isMssqlEnabled } from './db/mssql';
 import { requireAuth } from './middleware/auth';
@@ -64,5 +66,7 @@ app.use('/api/transactions', transactionsRoutes);
 app.use('/api/transfers', transfersRoutes);
 app.use('/api/spending-alerts', spendingAlertsRoutes);
 app.use('/api/members', membersRoutes);
+app.use('/api/budgets', budgetsRoutes);
+app.use('/api/market-prices', marketPricesRoutes);
 
 export default app;

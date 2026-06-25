@@ -11,4 +11,6 @@ export interface TransactionItem {
   createdBy: string;
   adjustmentOfId?: string;
   adjustedById?: string;
+  assetQuantity?: number | null;
+  assetUnit?: string | null;
 }

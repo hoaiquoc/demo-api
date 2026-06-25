@@ -38,6 +38,7 @@ async function ensureUsersTable(pool: sql.ConnectionPool, fullName: string) {
         [role] NVARCHAR(16) NOT NULL,
         [avatar] NVARCHAR(8) NOT NULL,
         [spaces] INT NOT NULL,
+        [isActive] BIT NOT NULL CONSTRAINT DF_Users_IsActive DEFAULT (1),
         [passwordHash] NVARCHAR(256) NOT NULL,
         [passwordSalt] NVARCHAR(256) NOT NULL,
         [passwordIterations] INT NOT NULL,
@@ -56,6 +57,19 @@ async function ensureUsersTable(pool: sql.ConnectionPool, fullName: string) {
     BEGIN
       ALTER TABLE ${fullName}
       ADD [tenantId] NVARCHAR(64) NOT NULL CONSTRAINT DF_Users_TenantId DEFAULT ('${DEFAULT_TENANT_ID}');
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'isActive'
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ADD [isActive] BIT NOT NULL CONSTRAINT DF_Users_IsActive DEFAULT (1);
     END
   `);
 }
@@ -127,6 +141,8 @@ async function ensureTransactionsTable(pool: sql.ConnectionPool, fullName: strin
         [status] NVARCHAR(16) NOT NULL CONSTRAINT DF_Transactions_Status DEFAULT ('Completed'),
         [adjustmentOfId] NVARCHAR(64) NULL,
         [adjustedById] NVARCHAR(64) NULL,
+        [assetQuantity] DECIMAL(18, 6) NULL,
+        [assetUnit] NVARCHAR(16) NULL,
         [note] NVARCHAR(MAX) NULL,
         [createdBy] NVARCHAR(128) NOT NULL
       )
@@ -187,6 +203,32 @@ async function ensureTransactionsTable(pool: sql.ConnectionPool, fullName: strin
 
   await pool.request().query(`
     IF NOT EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'assetQuantity'
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ADD [assetQuantity] DECIMAL(18, 6) NULL;
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'assetUnit'
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ADD [assetUnit] NVARCHAR(16) NULL;
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
       SELECT 1 FROM sys.indexes
       WHERE name = 'IX_Transactions_OccurredAt'
         AND object_id = OBJECT_ID(N'${fullName}')
@@ -242,6 +284,9 @@ async function ensureAccountsTable(pool: sql.ConnectionPool, fullName: string) {
         [type] NVARCHAR(64) NOT NULL,
         [initialBalance] BIGINT NOT NULL,
         [color] NVARCHAR(32) NOT NULL,
+        [assetCode] NVARCHAR(32) NULL,
+        [assetQuantity] DECIMAL(18, 6) NULL,
+        [assetUnit] NVARCHAR(16) NULL,
         [createdAt] DATETIME2 NOT NULL CONSTRAINT DF_Accounts_CreatedAt DEFAULT (SYSUTCDATETIME())
       )
     END
@@ -257,6 +302,45 @@ async function ensureAccountsTable(pool: sql.ConnectionPool, fullName: string) {
     BEGIN
       ALTER TABLE ${fullName}
       ADD [tenantId] NVARCHAR(64) NOT NULL CONSTRAINT DF_Accounts_TenantId DEFAULT ('${DEFAULT_TENANT_ID}');
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'assetCode'
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ADD [assetCode] NVARCHAR(32) NULL;
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'assetQuantity'
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ADD [assetQuantity] DECIMAL(18, 6) NULL;
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'assetUnit'
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ADD [assetUnit] NVARCHAR(16) NULL;
     END
   `);
 
@@ -340,6 +424,73 @@ async function ensureSpendingAlertsTable(pool: sql.ConnectionPool, fullName: str
   `);
 }
 
+async function ensurePasswordResetTokensTable(pool: sql.ConnectionPool, fullName: string) {
+  await pool.request().query(`
+    IF OBJECT_ID(N'${fullName}', N'U') IS NULL
+    BEGIN
+      CREATE TABLE ${fullName} (
+        [token] NVARCHAR(128) NOT NULL PRIMARY KEY,
+        [userId] NVARCHAR(64) NOT NULL,
+        [tenantId] NVARCHAR(64) NOT NULL,
+        [expiresAt] DATETIME2 NOT NULL,
+        [usedAt] DATETIME2 NULL,
+        [createdAt] DATETIME2 NOT NULL CONSTRAINT DF_PasswordResetTokens_CreatedAt DEFAULT (SYSUTCDATETIME())
+      )
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.indexes
+      WHERE name = 'IX_PasswordResetTokens_UserId'
+        AND object_id = OBJECT_ID(N'${fullName}')
+    )
+    BEGIN
+      CREATE INDEX IX_PasswordResetTokens_UserId ON ${fullName} ([userId])
+    END
+  `);
+}
+
+async function ensureBudgetsTable(pool: sql.ConnectionPool, fullName: string) {
+  await pool.request().query(`
+    IF OBJECT_ID(N'${fullName}', N'U') IS NULL
+    BEGIN
+      CREATE TABLE ${fullName} (
+        [id] NVARCHAR(64) NOT NULL PRIMARY KEY,
+        [tenantId] NVARCHAR(64) NOT NULL,
+        [month] NVARCHAR(7) NOT NULL,
+        [scopeType] NVARCHAR(16) NOT NULL,
+        [scopeId] NVARCHAR(64) NOT NULL,
+        [amount] BIGINT NOT NULL CONSTRAINT DF_Budgets_Amount DEFAULT (0),
+        [createdAt] DATETIME2 NOT NULL CONSTRAINT DF_Budgets_CreatedAt DEFAULT (SYSUTCDATETIME()),
+        [updatedAt] DATETIME2 NOT NULL CONSTRAINT DF_Budgets_UpdatedAt DEFAULT (SYSUTCDATETIME())
+      )
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.indexes
+      WHERE name = 'UX_Budgets_Tenant_Month_Scope'
+        AND object_id = OBJECT_ID(N'${fullName}')
+    )
+    BEGIN
+      CREATE UNIQUE INDEX UX_Budgets_Tenant_Month_Scope ON ${fullName} ([tenantId], [month], [scopeType], [scopeId])
+    END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.indexes
+      WHERE name = 'IX_Budgets_Tenant_Month'
+        AND object_id = OBJECT_ID(N'${fullName}')
+    )
+    BEGIN
+      CREATE INDEX IX_Budgets_Tenant_Month ON ${fullName} ([tenantId], [month])
+    END
+  `);
+}
+
 async function upsertCategory(
   pool: sql.ConnectionPool,
   fullName: string,
@@ -410,6 +561,8 @@ async function main() {
   const tenantsTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_TENANTS_TABLE', 'Tenants');
   const sessionsTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_SESSIONS_TABLE', 'Sessions');
   const spendingAlertsTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_SPENDING_ALERTS_TABLE', 'SpendingAlerts');
+  const passwordResetTokensTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_PASSWORD_RESET_TOKENS_TABLE', 'PasswordResetTokens');
+  const budgetsTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_BUDGETS_TABLE', 'Budgets');
 
   const pool = await getMssqlPool();
 
@@ -421,6 +574,8 @@ async function main() {
   await ensureAccountsTable(pool, accountsTable.full);
   await ensureCategoriesTable(pool, categoriesTable.full);
   await ensureSpendingAlertsTable(pool, spendingAlertsTable.full);
+  await ensurePasswordResetTokensTable(pool, passwordResetTokensTable.full);
+  await ensureBudgetsTable(pool, budgetsTable.full);
 
   await pool
     .request()

@@ -39,3 +39,15 @@ export function getSpendingAlertsTableName() {
   const table = (process.env.MSSQL_SPENDING_ALERTS_TABLE?.trim() || 'SpendingAlerts').replace(/[^a-zA-Z0-9_]/g, '');
   return `[${schema}].[${table}]`;
 }
+
+export function getBudgetsTableName() {
+  const schema = (process.env.MSSQL_SCHEMA?.trim() || 'dbo').replace(/[^a-zA-Z0-9_]/g, '');
+  const table = (process.env.MSSQL_BUDGETS_TABLE?.trim() || 'Budgets').replace(/[^a-zA-Z0-9_]/g, '');
+  return `[${schema}].[${table}]`;
+}
+
+export function getPasswordResetTokensTableName() {
+  const schema = (process.env.MSSQL_SCHEMA?.trim() || 'dbo').replace(/[^a-zA-Z0-9_]/g, '');
+  const table = (process.env.MSSQL_PASSWORD_RESET_TOKENS_TABLE?.trim() || 'PasswordResetTokens').replace(/[^a-zA-Z0-9_]/g, '');
+  return `[${schema}].[${table}]`;
+}

@@ -48,7 +48,17 @@ export class TransactionsController {
         status: payload.status === 'Draft' || payload.status === 'Pending' || payload.status === 'Completed' ? payload.status : 'Completed',
       });
       response.status(201).json(created);
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === 'GOLD_INSUFFICIENT') {
+        response.status(409).json({ message: 'Không đủ vàng để tạo phiếu chi' });
+        return;
+      }
+
+      if (error instanceof Error && (error.message === 'GOLD_PRICE_UNAVAILABLE' || error.message === 'GOLD_PRICE_INVALID')) {
+        response.status(502).json({ message: 'Không lấy được giá vàng để quy đổi' });
+        return;
+      }
+
       response.status(500).json({ message: 'Internal server error' });
     }
   };
