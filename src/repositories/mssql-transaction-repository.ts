@@ -25,6 +25,42 @@ function toNumber(value: unknown): number {
   return NaN;
 }
 
+function normalizeGoldUnit(value: unknown): 'gram' | 'chi' | 'luong' | null {
+  return value === 'gram' || value === 'chi' || value === 'luong' ? value : null;
+}
+
+function toGoldGrams(quantity: number, unit: 'gram' | 'chi' | 'luong' | null): number {
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return 0;
+  }
+
+  if (unit === 'luong') {
+    return quantity * 37.5;
+  }
+
+  if (unit === 'chi') {
+    return quantity * 3.75;
+  }
+
+  return quantity;
+}
+
+function fromGoldGrams(grams: number, unit: 'gram' | 'chi' | 'luong'): number {
+  if (!Number.isFinite(grams) || grams <= 0) {
+    return 0;
+  }
+
+  if (unit === 'luong') {
+    return grams / 37.5;
+  }
+
+  if (unit === 'chi') {
+    return grams / 3.75;
+  }
+
+  return grams;
+}
+
 async function getGoldVndPerGram(typeCode: string): Promise<GoldPriceSnapshot> {
   const normalizedTypeCode = typeCode.trim() || 'SJL1L10';
   const now = Date.now();
@@ -173,7 +209,7 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
         .input('tenantId', sql.NVarChar(64), tenantId)
         .input('accountId', sql.NVarChar(64), transaction.accountId)
         .query(`
-          SELECT TOP 1 [type], [assetCode], [assetQuantity]
+          SELECT TOP 1 [type], [assetCode], [assetQuantity], [assetUnit]
           FROM ${accountsTable} WITH (UPDLOCK, ROWLOCK)
           WHERE [tenantId] = @tenantId AND [id] = @accountId
         `);
@@ -187,15 +223,14 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
       const currentQuantity = Number.isFinite(currentQuantityRaw) ? currentQuantityRaw : 0;
       const inputAssetQuantityRaw = toNumber(transaction.assetQuantity ?? NaN);
       const inputAssetQuantity = Number.isFinite(inputAssetQuantityRaw) ? Math.max(0, inputAssetQuantityRaw) : 0;
-      const inputAssetUnit = transaction.assetUnit === 'luong' || transaction.assetUnit === 'chi' || transaction.assetUnit === 'gram' ? transaction.assetUnit : null;
-      const inputGrams =
-        inputAssetUnit === 'luong'
-          ? inputAssetQuantity * 37.5
-          : inputAssetUnit === 'chi'
-            ? inputAssetQuantity * 3.75
-            : inputAssetUnit === 'gram'
-              ? inputAssetQuantity
-              : 0;
+      const currentAssetUnit = normalizeGoldUnit(accountRow?.assetUnit);
+      const inputAssetUnit = normalizeGoldUnit(transaction.assetUnit);
+      const storageUnit =
+        currentAssetUnit === 'gram' && inputAssetUnit && inputAssetUnit !== 'gram'
+          ? inputAssetUnit
+          : currentAssetUnit ?? inputAssetUnit ?? 'chi';
+      const currentGrams = toGoldGrams(currentQuantity, currentAssetUnit ?? storageUnit);
+      const inputGrams = toGoldGrams(inputAssetQuantity, inputAssetUnit);
       const goldPrice =
         isGold && status === 'Completed' && inputGrams <= 0
           ? await getGoldVndPerGram(accountRow?.assetCode == null ? 'SJL1L10' : String(accountRow.assetCode))
@@ -208,9 +243,10 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
             ? (transaction.type === 'Income' ? 1 : -1) * inputGrams
           : 0;
       const gramsDelta = Math.round(gramsDeltaRaw * 1_000_000) / 1_000_000;
-      const nextQuantity = Math.round((currentQuantity + gramsDelta) * 1_000_000) / 1_000_000;
+      const nextGrams = Math.round((currentGrams + gramsDelta) * 1_000_000) / 1_000_000;
+      const nextQuantity = Math.round(fromGoldGrams(nextGrams, storageUnit) * 1_000_000) / 1_000_000;
 
-      if (isGold && status === 'Completed' && nextQuantity < 0) {
+      if (isGold && status === 'Completed' && nextGrams < 0) {
         throw new Error('GOLD_INSUFFICIENT');
       }
 
@@ -242,9 +278,11 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
           .input('tenantId', sql.NVarChar(64), tenantId)
           .input('accountId', sql.NVarChar(64), transaction.accountId)
           .input('assetQuantity', sql.Decimal(18, 6), nextQuantity)
+          .input('assetUnit', sql.NVarChar(16), storageUnit)
           .query(`
             UPDATE ${accountsTable}
-            SET [assetQuantity] = @assetQuantity
+            SET [assetQuantity] = @assetQuantity,
+                [assetUnit] = @assetUnit
             WHERE [tenantId] = @tenantId AND [id] = @accountId
           `);
       }
