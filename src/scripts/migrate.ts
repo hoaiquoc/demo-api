@@ -378,7 +378,7 @@ async function ensureCategoriesTable(pool: sql.ConnectionPool, fullName: string)
         [tenantId] NVARCHAR(64) NOT NULL CONSTRAINT DF_Categories_TenantId DEFAULT ('${DEFAULT_TENANT_ID}'),
         [name] NVARCHAR(128) NOT NULL,
         [type] NVARCHAR(16) NOT NULL,
-        [icon] NVARCHAR(8) NOT NULL,
+        [icon] NVARCHAR(32) NOT NULL,
         [color] NVARCHAR(64) NOT NULL,
         [createdAt] DATETIME2 NOT NULL CONSTRAINT DF_Categories_CreatedAt DEFAULT (SYSUTCDATETIME())
       )
@@ -395,6 +395,20 @@ async function ensureCategoriesTable(pool: sql.ConnectionPool, fullName: string)
     BEGIN
       ALTER TABLE ${fullName}
       ADD [tenantId] NVARCHAR(64) NOT NULL CONSTRAINT DF_Categories_TenantId DEFAULT ('${DEFAULT_TENANT_ID}');
+    END
+  `);
+
+  await pool.request().query(`
+    IF EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'icon'
+        AND max_length < 64
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ALTER COLUMN [icon] NVARCHAR(32) NOT NULL;
     END
   `);
 

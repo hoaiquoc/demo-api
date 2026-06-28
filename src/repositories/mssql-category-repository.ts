@@ -63,7 +63,7 @@ export class MsSqlCategoryRepository implements ICategoryRepository {
       .input('tenantId', sql.NVarChar(64), tenantId)
       .input('name', sql.NVarChar(128), category.name)
       .input('type', sql.NVarChar(16), category.type)
-      .input('icon', sql.NVarChar(8), category.icon)
+      .input('icon', sql.NVarChar(32), category.icon)
       .input('color', sql.NVarChar(64), category.color)
       .query(`
         INSERT INTO ${table} ([id], [tenantId], [name], [type], [icon], [color])
@@ -83,7 +83,7 @@ export class MsSqlCategoryRepository implements ICategoryRepository {
       .input('id', sql.NVarChar(64), id)
       .input('name', sql.NVarChar(128), category.name)
       .input('type', sql.NVarChar(16), category.type)
-      .input('icon', sql.NVarChar(8), category.icon)
+      .input('icon', sql.NVarChar(32), category.icon)
       .input('color', sql.NVarChar(64), category.color)
       .query(`
         UPDATE ${table}
