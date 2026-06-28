@@ -183,8 +183,6 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
       const isGold = accountType === 'Tiết kiệm vàng';
       const status = transaction.status === 'Draft' || transaction.status === 'Pending' || transaction.status === 'Completed' ? transaction.status : 'Completed';
 
-      const goldPrice = isGold && status === 'Completed' ? await getGoldVndPerGram(accountRow?.assetCode == null ? 'SJL1L10' : String(accountRow.assetCode)) : null;
-
       const currentQuantityRaw = toNumber(accountRow?.assetQuantity ?? 0);
       const currentQuantity = Number.isFinite(currentQuantityRaw) ? currentQuantityRaw : 0;
       const inputAssetQuantityRaw = toNumber(transaction.assetQuantity ?? NaN);
@@ -198,12 +196,16 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
             : inputAssetUnit === 'gram'
               ? inputAssetQuantity
               : 0;
+      const goldPrice =
+        isGold && status === 'Completed' && inputGrams <= 0
+          ? await getGoldVndPerGram(accountRow?.assetCode == null ? 'SJL1L10' : String(accountRow.assetCode))
+          : null;
 
       const gramsDeltaRaw =
         isGold && status === 'Completed' && goldPrice
-          ? inputGrams > 0
+          ? ((transaction.type === 'Income' ? 1 : -1) * Number(transaction.amount)) / goldPrice.vndPerGram
+          : isGold && status === 'Completed'
             ? (transaction.type === 'Income' ? 1 : -1) * inputGrams
-            : ((transaction.type === 'Income' ? 1 : -1) * Number(transaction.amount)) / goldPrice.vndPerGram
           : 0;
       const gramsDelta = Math.round(gramsDeltaRaw * 1_000_000) / 1_000_000;
       const nextQuantity = Math.round((currentQuantity + gramsDelta) * 1_000_000) / 1_000_000;
@@ -212,12 +214,7 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
         throw new Error('GOLD_INSUFFICIENT');
       }
 
-      const amountForInsert =
-        isGold && status === 'Completed' && goldPrice
-          ? inputGrams > 0
-            ? Math.round(Math.abs(inputGrams) * goldPrice.vndPerGram)
-            : Math.round(transaction.amount)
-          : Math.round(transaction.amount);
+      const amountForInsert = Math.round(transaction.amount);
 
       await new sql.Request(sqlTransaction)
         .input('id', sql.NVarChar(64), id)
