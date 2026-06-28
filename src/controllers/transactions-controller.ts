@@ -64,7 +64,40 @@ export class TransactionsController {
   };
 
   update = async (request: Request, response: Response): Promise<void> => {
-    response.status(405).json({ message: 'Không cho phép sửa trực tiếp. Hãy tạo phiếu điều chỉnh.' });
+    try {
+      const payload = request.body as Omit<TransactionItem, 'id'>;
+      const rawAmount = Number((payload as Record<string, unknown>).amount ?? 0);
+      const amount = Number.isFinite(rawAmount) ? Math.abs(Math.round(rawAmount)) : 0;
+      const updated = await this.transactionRepository.update(this.getTenantId(response), this.getIdParam(request), {
+        ...payload,
+        amount,
+        status: payload.status === 'Draft' || payload.status === 'Pending' || payload.status === 'Completed' ? payload.status : 'Completed',
+      });
+
+      if (!updated) {
+        response.status(404).json({ message: 'Transaction not found' });
+        return;
+      }
+
+      response.json(updated);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'TRANSACTION_UPDATE_NOT_ALLOWED') {
+        response.status(405).json({ message: 'Không cho phép sửa phiếu đã liên kết điều chỉnh' });
+        return;
+      }
+
+      if (error instanceof Error && error.message === 'GOLD_INSUFFICIENT') {
+        response.status(409).json({ message: 'Không đủ vàng để cập nhật phiếu' });
+        return;
+      }
+
+      if (error instanceof Error && (error.message === 'GOLD_PRICE_UNAVAILABLE' || error.message === 'GOLD_PRICE_INVALID')) {
+        response.status(502).json({ message: 'Không lấy được giá vàng để quy đổi' });
+        return;
+      }
+
+      response.status(500).json({ message: 'Internal server error' });
+    }
   };
 
   adjust = async (request: Request, response: Response): Promise<void> => {
@@ -99,7 +132,12 @@ export class TransactionsController {
       response.status(204).send();
     } catch (error) {
       if (error instanceof Error && error.message === 'TRANSACTION_DELETE_NOT_ALLOWED') {
-        response.status(405).json({ message: 'Không cho phép xoá phiếu' });
+        response.status(405).json({ message: 'Không cho phép xoá phiếu đã liên kết điều chỉnh' });
+        return;
+      }
+
+      if (error instanceof Error && error.message === 'GOLD_INSUFFICIENT') {
+        response.status(409).json({ message: 'Không đủ vàng để xoá phiếu này' });
         return;
       }
 
