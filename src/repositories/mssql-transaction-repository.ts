@@ -68,6 +68,22 @@ function roundGoldValue(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
 }
 
+function getCompletedCashDelta(
+  accountType: string,
+  transaction: Pick<TransactionItem, 'type' | 'status' | 'amount'>,
+): number {
+  if (accountType === 'Tiết kiệm vàng' || transaction.status !== 'Completed') {
+    return 0;
+  }
+
+  const amount = Math.abs(Math.round(transaction.amount));
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return 0;
+  }
+
+  return transaction.type === 'Income' ? amount : -amount;
+}
+
 async function getCompletedGoldDeltaGrams(
   accountType: string,
   assetCode: unknown,
@@ -281,6 +297,11 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
       }
 
       const amountForInsert = Math.round(transaction.amount);
+      const cashDelta = getCompletedCashDelta(accountType, {
+        type: transaction.type,
+        status,
+        amount: amountForInsert,
+      });
 
       await new sql.Request(sqlTransaction)
         .input('id', sql.NVarChar(64), id)
@@ -302,6 +323,18 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
           VALUES
             (@id, @tenantId, @title, @accountId, @categoryId, @amount, @type, @occurredAt, @status, @assetQuantity, @assetUnit, @note, @createdBy)
         `);
+
+      if (cashDelta !== 0) {
+        await new sql.Request(sqlTransaction)
+          .input('tenantId', sql.NVarChar(64), tenantId)
+          .input('accountId', sql.NVarChar(64), transaction.accountId)
+          .input('delta', sql.BigInt, cashDelta)
+          .query(`
+            UPDATE ${accountsTable}
+            SET [balance] = CAST([balance] AS BIGINT) + @delta
+            WHERE [tenantId] = @tenantId AND [id] = @accountId
+          `);
+      }
 
       if (isGold && status === 'Completed') {
         await new sql.Request(sqlTransaction)
@@ -548,6 +581,17 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
           })
         : 0;
 
+      const previousCashDelta = previousAccount
+        ? getCompletedCashDelta(previousAccount.type == null ? '' : String(previousAccount.type), previousTransaction)
+        : 0;
+      const nextCashDelta = nextAccount
+        ? getCompletedCashDelta(nextAccount.type == null ? '' : String(nextAccount.type), {
+            type: transaction.type,
+            status: nextStatus,
+            amount: nextAmount,
+          })
+        : 0;
+
       const goldAdjustments = new Map<string, { row: Record<string, unknown>; deltaGrams: number; preferredUnit: 'gram' | 'chi' | 'luong' | null }>();
 
       if (previousAccount && previousGoldDelta !== 0) {
@@ -598,6 +642,47 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
                 [assetUnit] = @assetUnit
             WHERE [tenantId] = @tenantId AND [id] = @accountId
           `);
+      }
+
+      if (previousCashDelta !== 0 || nextCashDelta !== 0) {
+        if (previousAccountId === transaction.accountId) {
+          const netDelta = Math.round(nextCashDelta - previousCashDelta);
+          if (netDelta !== 0) {
+            await new sql.Request(sqlTransaction)
+              .input('tenantId', sql.NVarChar(64), tenantId)
+              .input('accountId', sql.NVarChar(64), transaction.accountId)
+              .input('delta', sql.BigInt, netDelta)
+              .query(`
+                UPDATE ${accountsTable}
+                SET [balance] = CAST([balance] AS BIGINT) + @delta
+                WHERE [tenantId] = @tenantId AND [id] = @accountId
+              `);
+          }
+        } else {
+          if (previousCashDelta !== 0) {
+            await new sql.Request(sqlTransaction)
+              .input('tenantId', sql.NVarChar(64), tenantId)
+              .input('accountId', sql.NVarChar(64), previousAccountId)
+              .input('delta', sql.BigInt, Math.round(-previousCashDelta))
+              .query(`
+                UPDATE ${accountsTable}
+                SET [balance] = CAST([balance] AS BIGINT) + @delta
+                WHERE [tenantId] = @tenantId AND [id] = @accountId
+              `);
+          }
+
+          if (nextCashDelta !== 0) {
+            await new sql.Request(sqlTransaction)
+              .input('tenantId', sql.NVarChar(64), tenantId)
+              .input('accountId', sql.NVarChar(64), transaction.accountId)
+              .input('delta', sql.BigInt, Math.round(nextCashDelta))
+              .query(`
+                UPDATE ${accountsTable}
+                SET [balance] = CAST([balance] AS BIGINT) + @delta
+                WHERE [tenantId] = @tenantId AND [id] = @accountId
+              `);
+          }
+        }
       }
 
       const updateResult = await new sql.Request(sqlTransaction)
@@ -701,6 +786,16 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
         `);
 
       const accountRow = accountResult.recordset?.[0] as Record<string, unknown> | undefined;
+      const cashDelta = accountRow
+        ? getCompletedCashDelta(accountRow.type == null ? '' : String(accountRow.type), {
+            type: existingRow.type === 'Income' ? 'Income' : 'Expense',
+            status:
+              existingRow.status === 'Draft' || existingRow.status === 'Pending' || existingRow.status === 'Completed'
+                ? (existingRow.status as 'Draft' | 'Pending' | 'Completed')
+                : 'Completed',
+            amount: Number(existingRow.amount ?? 0),
+          })
+        : 0;
       const goldDelta = accountRow
         ? await getCompletedGoldDeltaGrams(accountRow.type == null ? '' : String(accountRow.type), accountRow.assetCode, {
             type: existingRow.type === 'Income' ? 'Income' : 'Expense',
@@ -733,6 +828,18 @@ export class MsSqlTransactionRepository implements ITransactionRepository {
             UPDATE ${accountsTable}
             SET [assetQuantity] = @assetQuantity,
                 [assetUnit] = @assetUnit
+            WHERE [tenantId] = @tenantId AND [id] = @accountId
+          `);
+      }
+
+      if (cashDelta !== 0) {
+        await new sql.Request(sqlTransaction)
+          .input('tenantId', sql.NVarChar(64), tenantId)
+          .input('accountId', sql.NVarChar(64), accountId)
+          .input('delta', sql.BigInt, Math.round(-cashDelta))
+          .query(`
+            UPDATE ${accountsTable}
+            SET [balance] = CAST([balance] AS BIGINT) + @delta
             WHERE [tenantId] = @tenantId AND [id] = @accountId
           `);
       }

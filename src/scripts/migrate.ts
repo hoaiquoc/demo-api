@@ -296,6 +296,7 @@ async function ensureAccountsTable(pool: sql.ConnectionPool, fullName: string) {
         [name] NVARCHAR(128) NOT NULL,
         [type] NVARCHAR(64) NOT NULL,
         [initialBalance] BIGINT NOT NULL,
+        [balance] BIGINT NOT NULL CONSTRAINT DF_Accounts_Balance DEFAULT (0),
         [color] NVARCHAR(32) NOT NULL,
         [assetCode] NVARCHAR(32) NULL,
         [assetQuantity] DECIMAL(18, 6) NULL,
@@ -355,6 +356,43 @@ async function ensureAccountsTable(pool: sql.ConnectionPool, fullName: string) {
       ALTER TABLE ${fullName}
       ADD [assetUnit] NVARCHAR(16) NULL;
     END
+  `);
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'${fullName}')
+        AND name = 'balance'
+    )
+    BEGIN
+      ALTER TABLE ${fullName}
+      ADD [balance] BIGINT NOT NULL CONSTRAINT DF_Accounts_Balance DEFAULT (0);
+    END
+  `);
+
+  const transactionsTable = getSchemaAndTable('MSSQL_SCHEMA', 'MSSQL_TRANSACTIONS_TABLE', 'Transactions').full;
+
+  await pool.request().query(`
+    UPDATE a
+    SET a.[balance] =
+      CASE
+        WHEN a.[type] = N'Tiết kiệm vàng' THEN CAST(a.[initialBalance] AS BIGINT)
+        ELSE CAST(a.[initialBalance] AS BIGINT)
+          + ISNULL((
+              SELECT SUM(
+                CASE
+                  WHEN t.[status] = N'Completed' AND t.[type] = N'Income' THEN CAST(t.[amount] AS BIGINT)
+                  WHEN t.[status] = N'Completed' AND t.[type] = N'Expense' THEN -CAST(t.[amount] AS BIGINT)
+                  ELSE 0
+                END
+              )
+              FROM ${transactionsTable} t
+              WHERE t.[tenantId] = a.[tenantId]
+                AND t.[accountId] = a.[id]
+            ), 0)
+      END
+    FROM ${fullName} a
   `);
 
   await pool.request().query(`

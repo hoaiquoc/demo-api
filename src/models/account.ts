@@ -3,6 +3,7 @@ export interface Account {
   name: string;
   type: string;
   initialBalance: number;
+  balance?: number;
   color: string;
   assetCode?: string | null;
   assetQuantity?: number | null;
