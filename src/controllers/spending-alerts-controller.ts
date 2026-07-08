@@ -41,8 +41,9 @@ export class SpendingAlertsController {
     try {
       const saved = await this.repository.upsert(this.getTenantId(response), categoryId, Math.round(thresholdAmount), period);
       response.json(saved);
-    } catch {
-      response.status(500).json({ message: 'Internal server error' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Internal server error';
+      response.status(500).json({ message });
     }
   };
 }
