@@ -23,6 +23,29 @@ export class MsSqlSpendingAlertRepository implements ISpendingAlertRepository {
         CREATE INDEX IX_SpendingAlerts_Tenant_Category ON ${table} ([tenantId], [categoryId])
       END
     `);
+
+    await pool.request().query(`
+      IF EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'UX_SpendingAlerts_Tenant_Period'
+          AND object_id = OBJECT_ID(N'${table}')
+      )
+      BEGIN
+        DROP INDEX UX_SpendingAlerts_Tenant_Period ON ${table}
+      END
+    `);
+
+    await pool.request().query(`
+      IF NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'UX_SpendingAlerts_Tenant_Period_Category'
+          AND object_id = OBJECT_ID(N'${table}')
+      )
+      BEGIN
+        CREATE UNIQUE INDEX UX_SpendingAlerts_Tenant_Period_Category ON ${table} ([tenantId], [period], [categoryId])
+          WHERE [categoryId] IS NOT NULL
+      END
+    `);
   }
 
   async getAll(tenantId: string): Promise<SpendingAlert[]> {
@@ -55,30 +78,7 @@ export class MsSqlSpendingAlertRepository implements ISpendingAlertRepository {
     const normalizedPeriod: 'month' = period === 'month' ? 'month' : 'month';
     await this.ensureCategoryColumn(pool, table);
 
-    await pool
-      .request()
-      .input('tenantId', sql.NVarChar(64), tenantId)
-      .input('period', sql.NVarChar(16), normalizedPeriod)
-      .input('categoryId', sql.NVarChar(64), normalizedCategoryId)
-      .input('thresholdAmount', sql.BigInt, Math.max(0, Math.round(thresholdAmount)))
-      .input('id', sql.NVarChar(64), id)
-      .query(`
-        MERGE ${table} AS target
-        USING (SELECT @tenantId AS tenantId, @period AS period, @categoryId AS categoryId) AS source
-        ON target.tenantId = source.tenantId
-           AND target.period = source.period
-           AND (
-             (target.categoryId IS NULL AND source.categoryId IS NULL)
-             OR target.categoryId = source.categoryId
-           )
-        WHEN MATCHED THEN
-          UPDATE SET [thresholdAmount] = @thresholdAmount, [updatedAt] = SYSUTCDATETIME()
-        WHEN NOT MATCHED THEN
-          INSERT ([id], [tenantId], [period], [categoryId], [thresholdAmount])
-          VALUES (@id, @tenantId, @period, @categoryId, @thresholdAmount);
-      `);
-
-    const lookup = await pool
+    const existingLookup = await pool
       .request()
       .input('tenantId', sql.NVarChar(64), tenantId)
       .input('period', sql.NVarChar(16), normalizedPeriod)
@@ -94,17 +94,47 @@ export class MsSqlSpendingAlertRepository implements ISpendingAlertRepository {
           )
       `);
 
-    const row = lookup.recordset?.[0] as Record<string, unknown> | undefined;
-    if (!row) {
-      return { id, tenantId, period: 'month', categoryId: normalizedCategoryId, thresholdAmount: Math.max(0, Math.round(thresholdAmount)) };
+    const existingRow = existingLookup.recordset?.[0] as Record<string, unknown> | undefined;
+
+    if (existingRow) {
+      await pool
+        .request()
+        .input('id', sql.NVarChar(64), String(existingRow.id))
+        .input('thresholdAmount', sql.BigInt, Math.max(0, Math.round(thresholdAmount)))
+        .query(`
+          UPDATE ${table}
+          SET [thresholdAmount] = @thresholdAmount,
+              [updatedAt] = SYSUTCDATETIME()
+          WHERE [id] = @id
+        `);
+
+      return {
+        id: String(existingRow.id),
+        tenantId,
+        period: 'month',
+        categoryId: normalizedCategoryId,
+        thresholdAmount: Math.max(0, Math.round(thresholdAmount)),
+      };
     }
 
+    await pool
+      .request()
+      .input('tenantId', sql.NVarChar(64), tenantId)
+      .input('period', sql.NVarChar(16), normalizedPeriod)
+      .input('categoryId', sql.NVarChar(64), normalizedCategoryId)
+      .input('thresholdAmount', sql.BigInt, Math.max(0, Math.round(thresholdAmount)))
+      .input('id', sql.NVarChar(64), id)
+      .query(`
+        INSERT INTO ${table} ([id], [tenantId], [period], [categoryId], [thresholdAmount])
+        VALUES (@id, @tenantId, @period, @categoryId, @thresholdAmount)
+      `);
+
     return {
-      id: String(row.id),
-      tenantId: String(row.tenantId),
+      id,
+      tenantId,
       period: 'month',
-      categoryId: row.categoryId ? String(row.categoryId) : null,
-      thresholdAmount: Number(row.thresholdAmount),
+      categoryId: normalizedCategoryId,
+      thresholdAmount: Math.max(0, Math.round(thresholdAmount)),
     };
   }
 }
